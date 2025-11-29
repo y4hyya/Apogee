@@ -123,16 +123,82 @@ npm run update-price:mock
 npm run update-price:crash-mock
 ```
 
+## 💥 Crash Demo Flow
+
+Demonstrate liquidation risk by simulating a price crash:
+
+### Prerequisites
+1. Have the frontend running: `cd frontend && npm run dev`
+2. Connect Freighter wallet on **Testnet**
+3. Have a position with collateral (XLM) and debt (USDC)
+
+### Demo Steps
+
+```bash
+cd scripts
+
+# Set environment (use testnet oracle and deployer secret key)
+export ORACLE_CONTRACT_ID="CCAOAPHLPMLM4GLITITTP3R2JADJXSSBVZJ6P7AALMYH5HZFPSWDWOW3"
+export SECRET_KEY="SXXXXXXX..."  # Deployer/admin secret key
+export NETWORK="testnet"
+
+# 1. Set normal price ($0.35)
+npm run update-price:mock
+
+# 2. Watch the dashboard - Health Factor should be green
+
+# 3. CRASH! Simulate 50% price drop
+npm run update-price:crash-mock
+
+# 4. Watch the dashboard:
+#    - XLM price drops from $0.30 → $0.15
+#    - Collateral value drops by 50%
+#    - Health Factor turns RED
+#    - Liquidation warning appears!
+
+# 5. Use "Quick Repay" in the UI to recover position
+
+# 6. Restore normal prices
+npm run update-price:mock
+```
+
+### What Happens During Crash
+
+| Before Crash | After Crash |
+|--------------|-------------|
+| XLM: $0.30 | XLM: $0.15 (-50%) |
+| Collateral: $600 | Collateral: $300 |
+| Debt: $200 | Debt: $200 (unchanged) |
+| HF: 2.4 (green) | HF: 1.2 (red!) |
+
+The UI will:
+- Flash the Health Factor bar red
+- Show "LIQUIDATION RISK" banner
+- Enable "Quick Repay" button
+- Update every 10 seconds automatically
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SECRET_KEY` | Yes | Deployer/admin wallet secret key |
-| `NETWORK` | No | `futurenet` (default) or `testnet` |
+| `NETWORK` | No | `testnet` (default) or `futurenet` |
 | `POOL_CONTRACT_ID` | No* | Lending pool contract ID |
 | `ORACLE_CONTRACT_ID` | No* | Price oracle contract ID |
 
 *Required if not using `deployment.json`
+
+### Quick Setup for Testnet
+
+```bash
+# Use deployed testnet contracts
+export ORACLE_CONTRACT_ID="CCAOAPHLPMLM4GLITITTP3R2JADJXSSBVZJ6P7AALMYH5HZFPSWDWOW3"
+export POOL_CONTRACT_ID="CASYJNF6UM5JN3UUCRQN6AHZF7CAXJ64EVWCCT3LVXOA34UEFTBYUH4G"
+export NETWORK="testnet"
+
+# Get deployer secret key from stellar CLI
+export SECRET_KEY=$(stellar keys show deployer-testnet)
+```
 
 ## Deployment Flow
 

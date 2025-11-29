@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { HealthFactorIndicator } from "@/components/health-factor-indicator"
-import { stellendContractAPI, type DashboardData } from "@/services/soroban-service"
+import { stellendContractAPI, sorobanService, type DashboardData } from "@/services/soroban-service"
 import { useWallet } from "@/hooks/use-wallet"
 import { Shield, ArrowDown, ArrowUp, AlertTriangle, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -15,6 +15,7 @@ export default function CollateralPage() {
   const { publicKey, isConnected, signTx } = useWallet()
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [walletBalances, setWalletBalances] = useState<{ sXLM: number; sUSDC: number } | null>(null)
+  const [xlmPrice, setXlmPrice] = useState<number>(0.35)
   const [loading, setLoading] = useState(true)
   const [depositAmount, setDepositAmount] = useState("")
   const [withdrawAmount, setWithdrawAmount] = useState("")
@@ -22,12 +23,14 @@ export default function CollateralPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [dashboard, balances] = await Promise.all([
+      const [dashboard, balances, price] = await Promise.all([
         stellendContractAPI.getDashboardData(publicKey || ""),
         stellendContractAPI.getWalletBalances(publicKey || ""),
+        sorobanService.getPrice("XLM"),
       ])
       setDashboardData(dashboard)
       setWalletBalances(balances)
+      setXlmPrice(price)
     } catch (error) {
       console.error("Failed to load data:", error)
     } finally {
@@ -114,6 +117,7 @@ export default function CollateralPage() {
         healthFactor={dashboardData.healthFactor}
         collateralValue={dashboardData.userCollateral_USD}
         borrowedValue={dashboardData.userDebt_sUSDC}
+        xlmPrice={xlmPrice}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

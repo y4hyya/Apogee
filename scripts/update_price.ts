@@ -65,6 +65,9 @@ const NETWORKS: Record<string, NetworkConfig> = {
   },
 };
 
+// Default to testnet for Stellend
+const DEFAULT_NETWORK = "testnet";
+
 const COINGECKO_API_URL = "https://api.coingecko.com/api/v3/simple/price";
 
 // Price scaling factor (matches contract)
@@ -289,7 +292,7 @@ function parseArgs(): { crashMode: boolean; mockMode: boolean } {
 function loadConfig(args: { crashMode: boolean; mockMode: boolean }): Config {
   const oracleContractId = process.env.ORACLE_CONTRACT_ID;
   const secretKey = process.env.SECRET_KEY;
-  const networkName = process.env.NETWORK || "futurenet";
+  const networkName = process.env.NETWORK || DEFAULT_NETWORK;
 
   if (!oracleContractId) {
     console.error("❌ ORACLE_CONTRACT_ID environment variable not set");
