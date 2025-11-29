@@ -4,246 +4,361 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol,
 };
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/// Scaling factor for percentages and rates (1e7 = 10_000_000)
+/// 100% = 10_000_000, 75% = 7_500_000, 1% = 100_000
+const SCALE: i128 = 10_000_000;
+
+/// Initial exchange rate for sTokens (1:1 with underlying)
+/// Scaled by 1e9 for precision
+const INITIAL_EXCHANGE_RATE: i128 = 1_000_000_000;
+
+/// Asset symbols
+const XLM: Symbol = symbol_short!("XLM");
+const USDC: Symbol = symbol_short!("USDC");
+
+// ============================================================================
+// DATA STRUCTURES
+// ============================================================================
+
 /// Storage keys for the lending pool
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
+    // ========== CONFIGURATION ==========
     /// Admin address
     Admin,
-    /// Total deposits in the pool (scaled by 7 decimals)
-    TotalDeposits,
-    /// Total borrows from the pool (scaled by 7 decimals)
-    TotalBorrows,
-    /// User deposit balance
-    UserDeposit(Address),
-    /// User borrow balance
-    UserBorrow(Address),
-    /// User collateral (XLM deposited)
-    UserCollateral(Address),
-    /// USDC token contract address
-    UsdcToken,
-    /// XLM token contract address (wrapped)
-    XlmToken,
-    /// Interest rate model contract address
-    InterestRateModel,
+    /// Token contract address for an asset
+    TokenAddress(Symbol),
     /// Price oracle contract address
     PriceOracle,
-    /// LTV ratio (75% = 7500, scaled by 10000)
-    LtvRatio,
-    /// Liquidation threshold (80% = 8000, scaled by 10000)
-    LiquidationThreshold,
-    /// Last accrual timestamp
-    LastAccrualTime,
-    /// Accumulated borrow index (for interest)
-    BorrowIndex,
+    /// Interest rate model contract address
+    InterestRateModel,
+    /// LTV ratio per asset (scaled by SCALE, 75% = 7_500_000)
+    LtvRatio(Symbol),
+    /// Liquidation threshold per asset (scaled by SCALE, 80% = 8_000_000)
+    LiquidationThreshold(Symbol),
+    /// Whether an asset is enabled as collateral
+    CollateralEnabled(Symbol),
+    /// Whether an asset is enabled for borrowing
+    BorrowEnabled(Symbol),
+
+    // ========== POOL STATE (per asset) ==========
+    /// Total underlying supplied to the pool
+    TotalSupply(Symbol),
+    /// Total sToken shares minted
+    TotalShares(Symbol),
+    /// Total borrowed from the pool
+    TotalBorrow(Symbol),
+    /// Exchange rate: underlying per sToken (scaled by 1e9)
+    ExchangeRate(Symbol),
+    /// Borrow index for interest accrual (scaled by 1e9)
+    BorrowIndex(Symbol),
+    /// Last interest accrual timestamp
+    LastAccrualTime(Symbol),
+    /// Reserve factor (portion of interest going to reserves)
+    ReserveFactor(Symbol),
+    /// Total reserves accumulated
+    TotalReserves(Symbol),
+
+    // ========== USER STATE ==========
+    /// User's sToken share balance per asset
+    UserShares(Address, Symbol),
+    /// User's collateral balance per asset (in underlying units)
+    UserCollateral(Address, Symbol),
+    /// User's debt balance per asset (principal, before interest)
+    UserDebt(Address, Symbol),
+    /// User's borrow index at time of last borrow (for interest calculation)
+    UserBorrowIndex(Address, Symbol),
 }
+
+/// Result struct for user position queries
+#[derive(Clone)]
+#[contracttype]
+pub struct UserPosition {
+    pub collateral_value_usd: i128,
+    pub debt_value_usd: i128,
+    pub available_borrow_usd: i128,
+    pub health_factor: i128,
+}
+
+/// Result struct for market info queries
+#[derive(Clone)]
+#[contracttype]
+pub struct MarketInfo {
+    pub total_supply: i128,
+    pub total_borrow: i128,
+    pub total_shares: i128,
+    pub exchange_rate: i128,
+    pub utilization_rate: i128,
+    pub ltv_ratio: i128,
+}
+
+// ============================================================================
+// CONTRACT
+// ============================================================================
 
 /// Stellend Lending Pool Contract
 /// 
-/// This is the main contract for the Stellend lending protocol.
-/// It handles:
-/// - Deposits (supply liquidity to earn interest)
-/// - Withdrawals (remove supplied liquidity)
-/// - Borrowing (borrow against collateral)
-/// - Repayment (repay borrowed assets)
-/// - Collateral management (deposit/withdraw XLM as collateral)
+/// A peer-to-pool lending market supporting multiple assets.
+/// Users can:
+/// - Supply assets to earn interest (receive sTokens)
+/// - Deposit collateral (XLM) to enable borrowing
+/// - Borrow assets against collateral (respecting LTV)
+/// - Repay borrowed assets
 #[contract]
 pub struct LendingPool;
 
+// ============================================================================
+// ORACLE INTERFACE (for cross-contract calls)
+// ============================================================================
+
+// Note: In production, use contractimport! to call the actual oracle contract
+// For now, we use hardcoded prices in get_asset_price() as a fallback
+
 #[contractimpl]
 impl LendingPool {
+    // ========================================================================
+    // INITIALIZATION
+    // ========================================================================
+
     /// Initialize the lending pool
     /// 
     /// # Arguments
     /// * `admin` - Admin address for protocol management
-    /// * `usdc_token` - USDC token contract address
-    /// * `xlm_token` - Wrapped XLM token contract address
-    /// * `interest_rate_model` - Interest rate model contract address
     /// * `price_oracle` - Price oracle contract address
+    /// * `xlm_token` - Wrapped XLM token contract address
+    /// * `usdc_token` - USDC token contract address
     pub fn initialize(
         env: Env,
         admin: Address,
-        usdc_token: Address,
-        xlm_token: Address,
-        interest_rate_model: Address,
         price_oracle: Address,
+        xlm_token: Address,
+        usdc_token: Address,
     ) {
-        // Ensure not already initialized
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("Already initialized");
         }
 
-        // Store configuration
+        // Store admin and oracle
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::UsdcToken, &usdc_token);
-        env.storage().instance().set(&DataKey::XlmToken, &xlm_token);
-        env.storage().instance().set(&DataKey::InterestRateModel, &interest_rate_model);
         env.storage().instance().set(&DataKey::PriceOracle, &price_oracle);
-        
-        // Set default parameters
-        // LTV: 75% (7500 / 10000)
-        env.storage().instance().set(&DataKey::LtvRatio, &7500u32);
-        // Liquidation threshold: 80% (8000 / 10000)
-        env.storage().instance().set(&DataKey::LiquidationThreshold, &8000u32);
-        
-        // Initialize pool state
-        env.storage().instance().set(&DataKey::TotalDeposits, &0i128);
-        env.storage().instance().set(&DataKey::TotalBorrows, &0i128);
-        env.storage().instance().set(&DataKey::BorrowIndex, &1_000_000_000i128); // 1.0 scaled by 1e9
-        env.storage().instance().set(&DataKey::LastAccrualTime, &env.ledger().timestamp());
+
+        // Store token addresses
+        env.storage().instance().set(&DataKey::TokenAddress(XLM), &xlm_token);
+        env.storage().instance().set(&DataKey::TokenAddress(USDC), &usdc_token);
+
+        // Initialize XLM market (collateral only, not borrowable)
+        Self::init_market(&env, XLM, 7_500_000, 8_000_000, true, false); // 75% LTV, 80% liq threshold
+
+        // Initialize USDC market (borrowable, can be collateral)
+        Self::init_market(&env, USDC, 8_000_000, 8_500_000, true, true); // 80% LTV, 85% liq threshold
     }
 
-    // ========== SUPPLY FUNCTIONS ==========
+    /// Internal: Initialize a market for an asset
+    fn init_market(env: &Env, asset: Symbol, ltv: i128, liq_threshold: i128, collateral: bool, borrow: bool) {
+        env.storage().instance().set(&DataKey::LtvRatio(asset.clone()), &ltv);
+        env.storage().instance().set(&DataKey::LiquidationThreshold(asset.clone()), &liq_threshold);
+        env.storage().instance().set(&DataKey::CollateralEnabled(asset.clone()), &collateral);
+        env.storage().instance().set(&DataKey::BorrowEnabled(asset.clone()), &borrow);
+        env.storage().instance().set(&DataKey::TotalSupply(asset.clone()), &0i128);
+        env.storage().instance().set(&DataKey::TotalShares(asset.clone()), &0i128);
+        env.storage().instance().set(&DataKey::TotalBorrow(asset.clone()), &0i128);
+        env.storage().instance().set(&DataKey::ExchangeRate(asset.clone()), &INITIAL_EXCHANGE_RATE);
+        env.storage().instance().set(&DataKey::BorrowIndex(asset.clone()), &INITIAL_EXCHANGE_RATE);
+        env.storage().instance().set(&DataKey::LastAccrualTime(asset.clone()), &env.ledger().timestamp());
+        env.storage().instance().set(&DataKey::ReserveFactor(asset.clone()), &1_000_000i128); // 10%
+        env.storage().instance().set(&DataKey::TotalReserves(asset.clone()), &0i128);
+    }
 
-    /// Deposit USDC into the lending pool to earn interest
+    // ========================================================================
+    // SUPPLY FUNCTIONS (Deposit underlying, receive sTokens)
+    // ========================================================================
+
+    /// Supply assets to the lending pool
+    /// 
+    /// Deposits underlying tokens and mints sToken shares representing
+    /// the user's claim on the pool (including future interest).
     /// 
     /// # Arguments
     /// * `user` - The depositor's address
-    /// * `amount` - Amount of USDC to deposit (in base units)
+    /// * `asset` - Asset symbol (XLM or USDC)
+    /// * `amount` - Amount of underlying to deposit
     /// 
     /// # Returns
-    /// The amount deposited
-    pub fn deposit(env: Env, user: Address, amount: i128) -> i128 {
+    /// Amount of sToken shares minted
+    pub fn supply(env: Env, user: Address, asset: Symbol, amount: i128) -> i128 {
         user.require_auth();
         
         if amount <= 0 {
             panic!("Amount must be positive");
         }
 
-        // Transfer USDC from user to pool
-        let usdc_token: Address = env.storage().instance().get(&DataKey::UsdcToken).unwrap();
-        let token_client = token::Client::new(&env, &usdc_token);
+        // Accrue interest before state changes
+        Self::accrue_interest(&env, asset.clone());
+
+        // Get current exchange rate
+        let exchange_rate = Self::get_exchange_rate_internal(&env, asset.clone());
+        
+        // Calculate shares to mint: shares = amount * 1e9 / exchange_rate
+        let shares_to_mint = (amount * INITIAL_EXCHANGE_RATE) / exchange_rate;
+        
+        if shares_to_mint <= 0 {
+            panic!("Amount too small");
+        }
+
+        // Transfer underlying from user to pool
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&user, &env.current_contract_address(), &amount);
 
-        // Update user deposit balance
-        let current_deposit: i128 = env
+        // Update user's share balance
+        let current_shares: i128 = env
             .storage()
             .persistent()
-            .get(&DataKey::UserDeposit(user.clone()))
+            .get(&DataKey::UserShares(user.clone(), asset.clone()))
             .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::UserDeposit(user.clone()), &(current_deposit + amount));
+            .set(&DataKey::UserShares(user.clone(), asset.clone()), &(current_shares + shares_to_mint));
 
-        // Update total deposits
-        let total_deposits: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalDeposits)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalDeposits, &(total_deposits + amount));
+        // Update total supply and shares
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_shares: i128 = env.storage().instance().get(&DataKey::TotalShares(asset.clone())).unwrap_or(0);
+        env.storage().instance().set(&DataKey::TotalSupply(asset.clone()), &(total_supply + amount));
+        env.storage().instance().set(&DataKey::TotalShares(asset.clone()), &(total_shares + shares_to_mint));
 
         // Emit event
-        env.events().publish((symbol_short!("deposit"), user), amount);
+        env.events().publish((symbol_short!("supply"), user, asset), (amount, shares_to_mint));
 
-        amount
+        shares_to_mint
     }
 
-    /// Withdraw USDC from the lending pool
+    /// Withdraw assets from the lending pool
+    /// 
+    /// Burns sToken shares and returns underlying tokens to the user.
     /// 
     /// # Arguments
     /// * `user` - The user's address
-    /// * `amount` - Amount of USDC to withdraw (in base units)
+    /// * `asset` - Asset symbol
+    /// * `share_amount` - Amount of sToken shares to burn
     /// 
     /// # Returns
-    /// The amount withdrawn
-    pub fn withdraw(env: Env, user: Address, amount: i128) -> i128 {
+    /// Amount of underlying tokens returned
+    pub fn withdraw(env: Env, user: Address, asset: Symbol, share_amount: i128) -> i128 {
         user.require_auth();
         
-        if amount <= 0 {
+        if share_amount <= 0 {
             panic!("Amount must be positive");
         }
 
-        // Check user has sufficient deposit
-        let current_deposit: i128 = env
+        // Accrue interest before state changes
+        Self::accrue_interest(&env, asset.clone());
+
+        // Check user has sufficient shares
+        let user_shares: i128 = env
             .storage()
             .persistent()
-            .get(&DataKey::UserDeposit(user.clone()))
+            .get(&DataKey::UserShares(user.clone(), asset.clone()))
             .unwrap_or(0);
-        if current_deposit < amount {
-            panic!("Insufficient deposit balance");
+        if user_shares < share_amount {
+            panic!("Insufficient share balance");
         }
 
+        // Calculate underlying to return: underlying = shares * exchange_rate / 1e9
+        let exchange_rate = Self::get_exchange_rate_internal(&env, asset.clone());
+        let underlying_amount = (share_amount * exchange_rate) / INITIAL_EXCHANGE_RATE;
+
         // Check pool has sufficient liquidity
-        let total_deposits: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalDeposits)
-            .unwrap_or(0);
-        let total_borrows: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalBorrows)
-            .unwrap_or(0);
-        let available_liquidity = total_deposits - total_borrows;
-        if available_liquidity < amount {
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        let available_liquidity = total_supply - total_borrow;
+        if available_liquidity < underlying_amount {
             panic!("Insufficient pool liquidity");
         }
 
-        // Update user deposit balance
+        // Update user's share balance
         env.storage()
             .persistent()
-            .set(&DataKey::UserDeposit(user.clone()), &(current_deposit - amount));
+            .set(&DataKey::UserShares(user.clone(), asset.clone()), &(user_shares - share_amount));
 
-        // Update total deposits
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalDeposits, &(total_deposits - amount));
+        // Update total supply and shares
+        let total_shares: i128 = env.storage().instance().get(&DataKey::TotalShares(asset.clone())).unwrap_or(0);
+        env.storage().instance().set(&DataKey::TotalSupply(asset.clone()), &(total_supply - underlying_amount));
+        env.storage().instance().set(&DataKey::TotalShares(asset.clone()), &(total_shares - share_amount));
 
-        // Transfer USDC from pool to user
-        let usdc_token: Address = env.storage().instance().get(&DataKey::UsdcToken).unwrap();
-        let token_client = token::Client::new(&env, &usdc_token);
-        token_client.transfer(&env.current_contract_address(), &user, &amount);
+        // Transfer underlying from pool to user
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(&env.current_contract_address(), &user, &underlying_amount);
 
         // Emit event
-        env.events().publish((symbol_short!("withdraw"), user), amount);
+        env.events().publish((symbol_short!("withdraw"), user, asset), (underlying_amount, share_amount));
 
-        amount
+        underlying_amount
     }
 
-    // ========== COLLATERAL FUNCTIONS ==========
+    // ========================================================================
+    // COLLATERAL FUNCTIONS
+    // ========================================================================
 
-    /// Deposit XLM as collateral for borrowing
+    /// Deposit collateral for borrowing
+    /// 
+    /// Collateral is separate from supplied assets and is used to
+    /// secure borrowing positions.
     /// 
     /// # Arguments
     /// * `user` - The user's address
-    /// * `amount` - Amount of XLM to deposit as collateral
-    pub fn deposit_collateral(env: Env, user: Address, amount: i128) -> i128 {
+    /// * `asset` - Asset symbol (typically XLM)
+    /// * `amount` - Amount to deposit as collateral
+    pub fn deposit_collateral(env: Env, user: Address, asset: Symbol, amount: i128) -> i128 {
         user.require_auth();
         
         if amount <= 0 {
             panic!("Amount must be positive");
         }
 
-        // Transfer XLM from user to pool
-        let xlm_token: Address = env.storage().instance().get(&DataKey::XlmToken).unwrap();
-        let token_client = token::Client::new(&env, &xlm_token);
+        // Check asset is enabled as collateral
+        let collateral_enabled: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralEnabled(asset.clone()))
+            .unwrap_or(false);
+        if !collateral_enabled {
+            panic!("Asset not enabled as collateral");
+        }
+
+        // Transfer from user to pool
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&user, &env.current_contract_address(), &amount);
 
         // Update user collateral balance
         let current_collateral: i128 = env
             .storage()
             .persistent()
-            .get(&DataKey::UserCollateral(user.clone()))
+            .get(&DataKey::UserCollateral(user.clone(), asset.clone()))
             .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::UserCollateral(user.clone()), &(current_collateral + amount));
+            .set(&DataKey::UserCollateral(user.clone(), asset.clone()), &(current_collateral + amount));
 
         // Emit event
-        env.events().publish((symbol_short!("coll_dep"), user), amount);
+        env.events().publish((symbol_short!("coll_dep"), user, asset), amount);
 
         amount
     }
 
-    /// Withdraw XLM collateral
+    /// Withdraw collateral
     /// 
     /// # Arguments
     /// * `user` - The user's address
-    /// * `amount` - Amount of XLM to withdraw
-    pub fn withdraw_collateral(env: Env, user: Address, amount: i128) -> i128 {
+    /// * `asset` - Asset symbol
+    /// * `amount` - Amount to withdraw
+    pub fn withdraw_collateral(env: Env, user: Address, asset: Symbol, amount: i128) -> i128 {
         user.require_auth();
         
         if amount <= 0 {
@@ -253,260 +368,485 @@ impl LendingPool {
         let current_collateral: i128 = env
             .storage()
             .persistent()
-            .get(&DataKey::UserCollateral(user.clone()))
+            .get(&DataKey::UserCollateral(user.clone(), asset.clone()))
             .unwrap_or(0);
         if current_collateral < amount {
             panic!("Insufficient collateral");
         }
 
-        // Check health factor after withdrawal
+        // Check that withdrawal doesn't make position unhealthy
         let new_collateral = current_collateral - amount;
-        let user_borrow: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserBorrow(user.clone()))
-            .unwrap_or(0);
         
-        if user_borrow > 0 {
-            // TODO: Get XLM price from oracle and check health factor
-            // For now, simple check: new collateral must cover borrow with LTV
-            let ltv_ratio: u32 = env.storage().instance().get(&DataKey::LtvRatio).unwrap();
-            let max_borrow = (new_collateral * ltv_ratio as i128) / 10000;
-            if user_borrow > max_borrow {
-                panic!("Withdrawal would make position unhealthy");
-            }
-        }
-
-        // Update user collateral balance
+        // Temporarily update collateral to check health
         env.storage()
             .persistent()
-            .set(&DataKey::UserCollateral(user.clone()), &new_collateral);
+            .set(&DataKey::UserCollateral(user.clone(), asset.clone()), &new_collateral);
+        
+        let position = Self::get_user_position(env.clone(), user.clone());
+        
+        // If user has debt, ensure health factor stays above 1.0
+        if position.debt_value_usd > 0 && position.health_factor < SCALE {
+            // Revert the temporary update
+            env.storage()
+                .persistent()
+                .set(&DataKey::UserCollateral(user.clone(), asset.clone()), &current_collateral);
+            panic!("Withdrawal would make position unhealthy");
+        }
 
-        // Transfer XLM from pool to user
-        let xlm_token: Address = env.storage().instance().get(&DataKey::XlmToken).unwrap();
-        let token_client = token::Client::new(&env, &xlm_token);
+        // Transfer from pool to user
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&env.current_contract_address(), &user, &amount);
 
         // Emit event
-        env.events().publish((symbol_short!("coll_wth"), user), amount);
+        env.events().publish((symbol_short!("coll_wth"), user, asset), amount);
 
         amount
     }
 
-    // ========== BORROW FUNCTIONS ==========
+    // ========================================================================
+    // BORROW FUNCTIONS
+    // ========================================================================
 
-    /// Borrow USDC against deposited collateral
+    /// Borrow assets from the lending pool
+    /// 
+    /// Borrows underlying tokens against deposited collateral.
+    /// Requires: (total_debt_usd + new_borrow_usd) <= collateral_usd * LTV
     /// 
     /// # Arguments
     /// * `user` - The borrower's address
-    /// * `amount` - Amount of USDC to borrow
-    pub fn borrow(env: Env, user: Address, amount: i128) -> i128 {
+    /// * `asset` - Asset symbol to borrow (typically USDC)
+    /// * `amount` - Amount to borrow
+    pub fn borrow(env: Env, user: Address, asset: Symbol, amount: i128) -> i128 {
         user.require_auth();
         
         if amount <= 0 {
             panic!("Amount must be positive");
         }
 
-        // Check available liquidity
-        let total_deposits: i128 = env
+        // Check asset is enabled for borrowing
+        let borrow_enabled: bool = env
             .storage()
             .instance()
-            .get(&DataKey::TotalDeposits)
-            .unwrap_or(0);
-        let total_borrows: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalBorrows)
-            .unwrap_or(0);
-        let available_liquidity = total_deposits - total_borrows;
+            .get(&DataKey::BorrowEnabled(asset.clone()))
+            .unwrap_or(false);
+        if !borrow_enabled {
+            panic!("Asset not enabled for borrowing");
+        }
+
+        // Accrue interest before state changes
+        Self::accrue_interest(&env, asset.clone());
+
+        // Check pool has sufficient liquidity
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        let available_liquidity = total_supply - total_borrow;
         if available_liquidity < amount {
             panic!("Insufficient pool liquidity");
         }
 
-        // Check user's borrowing capacity
-        let user_collateral: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserCollateral(user.clone()))
-            .unwrap_or(0);
-        let user_borrow: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserBorrow(user.clone()))
-            .unwrap_or(0);
-        
-        let ltv_ratio: u32 = env.storage().instance().get(&DataKey::LtvRatio).unwrap();
-        // TODO: Get XLM price from oracle for proper USD value calculation
-        let max_borrow = (user_collateral * ltv_ratio as i128) / 10000;
-        
-        if user_borrow + amount > max_borrow {
-            panic!("Borrow amount exceeds capacity");
+        // Get current user position
+        let position = Self::get_user_position(env.clone(), user.clone());
+
+        // Get borrow amount in USD
+        let oracle: Address = env.storage().instance().get(&DataKey::PriceOracle).unwrap();
+        let asset_price = Self::get_asset_price(&env, &oracle, &asset);
+        let borrow_value_usd = (amount * asset_price) / SCALE;
+
+        // Check LTV constraint: new_total_debt <= collateral * LTV
+        let new_total_debt_usd = position.debt_value_usd + borrow_value_usd;
+        if new_total_debt_usd > position.available_borrow_usd + position.debt_value_usd {
+            panic!("Borrow exceeds LTV limit");
         }
 
-        // Update user borrow balance
+        // Update user's debt balance
+        let current_debt: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserDebt(user.clone(), asset.clone()))
+            .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::UserBorrow(user.clone()), &(user_borrow + amount));
+            .set(&DataKey::UserDebt(user.clone(), asset.clone()), &(current_debt + amount));
 
-        // Update total borrows
+        // Store user's borrow index for interest calculation
+        let borrow_index: i128 = env.storage().instance().get(&DataKey::BorrowIndex(asset.clone())).unwrap();
         env.storage()
-            .instance()
-            .set(&DataKey::TotalBorrows, &(total_borrows + amount));
+            .persistent()
+            .set(&DataKey::UserBorrowIndex(user.clone(), asset.clone()), &borrow_index);
 
-        // Transfer USDC from pool to user
-        let usdc_token: Address = env.storage().instance().get(&DataKey::UsdcToken).unwrap();
-        let token_client = token::Client::new(&env, &usdc_token);
+        // Update total borrow
+        env.storage().instance().set(&DataKey::TotalBorrow(asset.clone()), &(total_borrow + amount));
+
+        // Transfer underlying from pool to user
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&env.current_contract_address(), &user, &amount);
 
         // Emit event
-        env.events().publish((symbol_short!("borrow"), user), amount);
+        env.events().publish((symbol_short!("borrow"), user, asset), amount);
 
         amount
     }
 
-    /// Repay borrowed USDC
+    /// Repay borrowed assets
+    /// 
+    /// Reduces user's debt balance and pool's total borrows.
     /// 
     /// # Arguments
     /// * `user` - The borrower's address
-    /// * `amount` - Amount of USDC to repay
-    pub fn repay(env: Env, user: Address, amount: i128) -> i128 {
+    /// * `asset` - Asset symbol
+    /// * `amount` - Amount to repay (use i128::MAX to repay all)
+    /// 
+    /// # Returns
+    /// Actual amount repaid
+    pub fn repay(env: Env, user: Address, asset: Symbol, amount: i128) -> i128 {
         user.require_auth();
         
         if amount <= 0 {
             panic!("Amount must be positive");
         }
 
-        let user_borrow: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserBorrow(user.clone()))
-            .unwrap_or(0);
+        // Accrue interest before state changes
+        Self::accrue_interest(&env, asset.clone());
+
+        // Get user's current debt (including accrued interest)
+        let user_debt = Self::get_user_debt_with_interest(&env, user.clone(), asset.clone());
         
-        // Cap repayment at outstanding borrow
-        let repay_amount = if amount > user_borrow { user_borrow } else { amount };
-        
-        if repay_amount == 0 {
-            panic!("No outstanding borrow");
+        if user_debt == 0 {
+            panic!("No outstanding debt");
         }
 
-        // Transfer USDC from user to pool
-        let usdc_token: Address = env.storage().instance().get(&DataKey::UsdcToken).unwrap();
-        let token_client = token::Client::new(&env, &usdc_token);
+        // Cap repayment at outstanding debt
+        let repay_amount = if amount > user_debt { user_debt } else { amount };
+
+        // Transfer underlying from user to pool
+        let token_address: Address = env.storage().instance().get(&DataKey::TokenAddress(asset.clone())).unwrap();
+        let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&user, &env.current_contract_address(), &repay_amount);
 
-        // Update user borrow balance
+        // Update user's debt balance
+        let current_debt: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserDebt(user.clone(), asset.clone()))
+            .unwrap_or(0);
+        let new_debt = if repay_amount >= user_debt { 0 } else { current_debt - repay_amount };
         env.storage()
             .persistent()
-            .set(&DataKey::UserBorrow(user.clone()), &(user_borrow - repay_amount));
+            .set(&DataKey::UserDebt(user.clone(), asset.clone()), &new_debt);
 
-        // Update total borrows
-        let total_borrows: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::TotalBorrows)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::TotalBorrows, &(total_borrows - repay_amount));
+        // Update total borrow
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        let new_total_borrow = if total_borrow > repay_amount { total_borrow - repay_amount } else { 0 };
+        env.storage().instance().set(&DataKey::TotalBorrow(asset.clone()), &new_total_borrow);
 
         // Emit event
-        env.events().publish((symbol_short!("repay"), user), repay_amount);
+        env.events().publish((symbol_short!("repay"), user, asset), repay_amount);
 
         repay_amount
     }
 
-    // ========== VIEW FUNCTIONS ==========
+    // ========================================================================
+    // INTEREST ACCRUAL (stub for future implementation)
+    // ========================================================================
 
-    /// Get total deposits in the pool
-    pub fn get_total_deposits(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::TotalDeposits)
-            .unwrap_or(0)
-    }
-
-    /// Get total borrows from the pool
-    pub fn get_total_borrows(env: Env) -> i128 {
-        env.storage()
-            .instance()
-            .get(&DataKey::TotalBorrows)
-            .unwrap_or(0)
-    }
-
-    /// Get pool utilization rate (scaled by 1e7, so 50% = 5_000_000)
-    pub fn get_utilization_rate(env: Env) -> i128 {
-        let total_deposits: i128 = env
+    /// Accrue interest for an asset market
+    /// 
+    /// Updates the exchange rate and borrow index based on time elapsed
+    /// and utilization rate. This should be called before any state changes.
+    fn accrue_interest(env: &Env, asset: Symbol) {
+        let last_accrual: u64 = env
             .storage()
             .instance()
-            .get(&DataKey::TotalDeposits)
+            .get(&DataKey::LastAccrualTime(asset.clone()))
             .unwrap_or(0);
-        let total_borrows: i128 = env
+        let current_time = env.ledger().timestamp();
+        
+        if current_time <= last_accrual {
+            return;
+        }
+
+        let time_elapsed = current_time - last_accrual;
+        
+        // Get current state
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        
+        if total_borrow == 0 || total_supply == 0 {
+            env.storage().instance().set(&DataKey::LastAccrualTime(asset.clone()), &current_time);
+            return;
+        }
+
+        // Calculate utilization rate
+        let utilization = (total_borrow * SCALE) / total_supply;
+
+        // Simple interest rate model: base 2% + utilization * 10%
+        // Annual rate, we need to calculate per-second rate
+        let annual_rate = 200_000 + (utilization * 1_000_000) / SCALE; // 2% + up to 10%
+        let seconds_per_year: u64 = 31_536_000;
+        let interest_factor = (annual_rate * time_elapsed as i128) / seconds_per_year as i128;
+
+        // Update borrow index
+        let current_borrow_index: i128 = env
             .storage()
             .instance()
-            .get(&DataKey::TotalBorrows)
+            .get(&DataKey::BorrowIndex(asset.clone()))
+            .unwrap_or(INITIAL_EXCHANGE_RATE);
+        let new_borrow_index = current_borrow_index + (current_borrow_index * interest_factor) / SCALE;
+        env.storage().instance().set(&DataKey::BorrowIndex(asset.clone()), &new_borrow_index);
+
+        // Calculate interest accrued
+        let interest_accrued = (total_borrow * interest_factor) / SCALE;
+
+        // Update exchange rate (suppliers earn interest)
+        let reserve_factor: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ReserveFactor(asset.clone()))
+            .unwrap_or(1_000_000);
+        let supplier_interest = interest_accrued - (interest_accrued * reserve_factor) / SCALE;
+        let reserve_interest = (interest_accrued * reserve_factor) / SCALE;
+
+        // Increase total supply by supplier's portion of interest
+        env.storage().instance().set(&DataKey::TotalSupply(asset.clone()), &(total_supply + supplier_interest));
+        
+        // Increase reserves
+        let current_reserves: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalReserves(asset.clone()))
+            .unwrap_or(0);
+        env.storage().instance().set(&DataKey::TotalReserves(asset.clone()), &(current_reserves + reserve_interest));
+
+        // Update last accrual time
+        env.storage().instance().set(&DataKey::LastAccrualTime(asset.clone()), &current_time);
+    }
+
+    // ========================================================================
+    // INTERNAL HELPERS
+    // ========================================================================
+
+    /// Get exchange rate for sTokens
+    fn get_exchange_rate_internal(env: &Env, asset: Symbol) -> i128 {
+        let total_shares: i128 = env.storage().instance().get(&DataKey::TotalShares(asset.clone())).unwrap_or(0);
+        
+        if total_shares == 0 {
+            return INITIAL_EXCHANGE_RATE;
+        }
+
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        let total_reserves: i128 = env.storage().instance().get(&DataKey::TotalReserves(asset.clone())).unwrap_or(0);
+        
+        // Total cash = supply - borrows + borrow interest (approximated by borrow amount)
+        let total_underlying = total_supply + total_borrow - total_reserves;
+        
+        (total_underlying * INITIAL_EXCHANGE_RATE) / total_shares
+    }
+
+    /// Get user's debt including accrued interest
+    fn get_user_debt_with_interest(env: &Env, user: Address, asset: Symbol) -> i128 {
+        let principal: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserDebt(user.clone(), asset.clone()))
             .unwrap_or(0);
         
-        if total_deposits == 0 {
+        if principal == 0 {
+            return 0;
+        }
+
+        let user_borrow_index: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserBorrowIndex(user, asset.clone()))
+            .unwrap_or(INITIAL_EXCHANGE_RATE);
+        
+        let current_borrow_index: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::BorrowIndex(asset))
+            .unwrap_or(INITIAL_EXCHANGE_RATE);
+
+        // debt = principal * current_index / user_index
+        (principal * current_borrow_index) / user_borrow_index
+    }
+
+    /// Get asset price from oracle
+    /// 
+    /// TODO: In production, call the actual oracle contract using:
+    /// `oracle::get_price(env, oracle, asset)`
+    fn get_asset_price(_env: &Env, _oracle: &Address, asset: &Symbol) -> i128 {
+        // For now, use hardcoded prices as fallback
+        // In production, this would call the oracle contract
+        if *asset == XLM {
+            3_000_000 // $0.30
+        } else if *asset == USDC {
+            SCALE // $1.00
+        } else {
+            panic!("Unknown asset")
+        }
+    }
+
+    // ========================================================================
+    // VIEW FUNCTIONS
+    // ========================================================================
+
+    /// Get user's complete position across all assets
+    pub fn get_user_position(env: Env, user: Address) -> UserPosition {
+        let oracle: Address = env.storage().instance().get(&DataKey::PriceOracle).unwrap();
+
+        // Calculate total collateral value in USD
+        let mut collateral_value_usd: i128 = 0;
+        let mut weighted_collateral_usd: i128 = 0; // collateral * LTV
+
+        // XLM collateral
+        let xlm_collateral: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserCollateral(user.clone(), XLM))
+            .unwrap_or(0);
+        if xlm_collateral > 0 {
+            let xlm_price = Self::get_asset_price(&env, &oracle, &XLM);
+            let xlm_value = (xlm_collateral * xlm_price) / SCALE;
+            collateral_value_usd += xlm_value;
+            
+            let xlm_ltv: i128 = env.storage().instance().get(&DataKey::LtvRatio(XLM)).unwrap_or(7_500_000);
+            weighted_collateral_usd += (xlm_value * xlm_ltv) / SCALE;
+        }
+
+        // USDC collateral (if any)
+        let usdc_collateral: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserCollateral(user.clone(), USDC))
+            .unwrap_or(0);
+        if usdc_collateral > 0 {
+            let usdc_price = Self::get_asset_price(&env, &oracle, &USDC);
+            let usdc_value = (usdc_collateral * usdc_price) / SCALE;
+            collateral_value_usd += usdc_value;
+            
+            let usdc_ltv: i128 = env.storage().instance().get(&DataKey::LtvRatio(USDC)).unwrap_or(8_000_000);
+            weighted_collateral_usd += (usdc_value * usdc_ltv) / SCALE;
+        }
+
+        // Calculate total debt value in USD
+        let mut debt_value_usd: i128 = 0;
+
+        // USDC debt
+        let usdc_debt = Self::get_user_debt_with_interest(&env, user.clone(), USDC);
+        if usdc_debt > 0 {
+            let usdc_price = Self::get_asset_price(&env, &oracle, &USDC);
+            debt_value_usd += (usdc_debt * usdc_price) / SCALE;
+        }
+
+        // Calculate available borrow (max borrow - current debt)
+        let available_borrow_usd = if weighted_collateral_usd > debt_value_usd {
+            weighted_collateral_usd - debt_value_usd
+        } else {
+            0
+        };
+
+        // Calculate health factor
+        // HF = (collateral * liquidation_threshold) / debt
+        let health_factor = if debt_value_usd == 0 {
+            999 * SCALE // Infinite
+        } else {
+            // Use average liquidation threshold (simplified)
+            let liq_threshold: i128 = env.storage().instance().get(&DataKey::LiquidationThreshold(XLM)).unwrap_or(8_000_000);
+            (collateral_value_usd * liq_threshold) / debt_value_usd
+        };
+
+        UserPosition {
+            collateral_value_usd,
+            debt_value_usd,
+            available_borrow_usd,
+            health_factor,
+        }
+    }
+
+    /// Get market information for an asset
+    pub fn get_market_info(env: Env, asset: Symbol) -> MarketInfo {
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset.clone())).unwrap_or(0);
+        let total_shares: i128 = env.storage().instance().get(&DataKey::TotalShares(asset.clone())).unwrap_or(0);
+        let exchange_rate = Self::get_exchange_rate_internal(&env, asset.clone());
+        let ltv_ratio: i128 = env.storage().instance().get(&DataKey::LtvRatio(asset.clone())).unwrap_or(0);
+
+        let utilization_rate = if total_supply > 0 {
+            (total_borrow * SCALE) / total_supply
+        } else {
+            0
+        };
+
+        MarketInfo {
+            total_supply,
+            total_borrow,
+            total_shares,
+            exchange_rate,
+            utilization_rate,
+            ltv_ratio,
+        }
+    }
+
+    /// Get total supply for an asset
+    pub fn get_total_supply(env: Env, asset: Symbol) -> i128 {
+        env.storage().instance().get(&DataKey::TotalSupply(asset)).unwrap_or(0)
+    }
+
+    /// Get total borrows for an asset
+    pub fn get_total_borrow(env: Env, asset: Symbol) -> i128 {
+        env.storage().instance().get(&DataKey::TotalBorrow(asset)).unwrap_or(0)
+    }
+
+    /// Get user's share balance for an asset
+    pub fn get_user_shares(env: Env, user: Address, asset: Symbol) -> i128 {
+        env.storage().persistent().get(&DataKey::UserShares(user, asset)).unwrap_or(0)
+    }
+
+    /// Get user's collateral balance for an asset
+    pub fn get_user_collateral(env: Env, user: Address, asset: Symbol) -> i128 {
+        env.storage().persistent().get(&DataKey::UserCollateral(user, asset)).unwrap_or(0)
+    }
+
+    /// Get user's debt balance for an asset (without interest)
+    pub fn get_user_debt(env: Env, user: Address, asset: Symbol) -> i128 {
+        env.storage().persistent().get(&DataKey::UserDebt(user, asset)).unwrap_or(0)
+    }
+
+    /// Get user's debt balance with accrued interest
+    pub fn get_user_debt_total(env: Env, user: Address, asset: Symbol) -> i128 {
+        Self::get_user_debt_with_interest(&env, user, asset)
+    }
+
+    /// Get exchange rate for sTokens
+    pub fn get_exchange_rate(env: Env, asset: Symbol) -> i128 {
+        Self::get_exchange_rate_internal(&env, asset)
+    }
+
+    /// Get utilization rate for an asset
+    pub fn get_utilization_rate(env: Env, asset: Symbol) -> i128 {
+        let total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply(asset.clone())).unwrap_or(0);
+        let total_borrow: i128 = env.storage().instance().get(&DataKey::TotalBorrow(asset)).unwrap_or(0);
+        
+        if total_supply == 0 {
             return 0;
         }
         
-        (total_borrows * 10_000_000) / total_deposits
+        (total_borrow * SCALE) / total_supply
     }
 
-    /// Get user's deposit balance
-    pub fn get_user_deposit(env: Env, user: Address) -> i128 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::UserDeposit(user))
-            .unwrap_or(0)
+    /// Get LTV ratio for an asset
+    pub fn get_ltv_ratio(env: Env, asset: Symbol) -> i128 {
+        env.storage().instance().get(&DataKey::LtvRatio(asset)).unwrap_or(0)
     }
 
-    /// Get user's borrow balance
-    pub fn get_user_borrow(env: Env, user: Address) -> i128 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::UserBorrow(user))
-            .unwrap_or(0)
-    }
-
-    /// Get user's collateral balance
-    pub fn get_user_collateral(env: Env, user: Address) -> i128 {
-        env.storage()
-            .persistent()
-            .get(&DataKey::UserCollateral(user))
-            .unwrap_or(0)
-    }
-
-    /// Get user's health factor (scaled by 1e7, so 1.5 = 15_000_000)
-    /// Health Factor = (Collateral Value * Liquidation Threshold) / Borrow Value
-    pub fn get_health_factor(env: Env, user: Address) -> i128 {
-        let user_collateral: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserCollateral(user.clone()))
-            .unwrap_or(0);
-        let user_borrow: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::UserBorrow(user))
-            .unwrap_or(0);
-        
-        if user_borrow == 0 {
-            return 999_000_000; // Infinite health factor
-        }
-        
-        let liq_threshold: u32 = env
-            .storage()
-            .instance()
-            .get(&DataKey::LiquidationThreshold)
-            .unwrap();
-        
-        // TODO: Get actual USD values from price oracle
-        // For now, assume 1:1 ratio
-        (user_collateral * liq_threshold as i128 * 10_000_000) / (user_borrow * 10000)
+    /// Get liquidation threshold for an asset
+    pub fn get_liquidation_threshold(env: Env, asset: Symbol) -> i128 {
+        env.storage().instance().get(&DataKey::LiquidationThreshold(asset)).unwrap_or(0)
     }
 }
 
 #[cfg(test)]
 mod test;
-
