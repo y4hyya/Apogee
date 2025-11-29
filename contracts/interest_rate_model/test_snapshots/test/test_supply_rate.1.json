@@ -44,21 +44,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "BaseRate"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": {
-                            "hi": 0,
-                            "lo": 0
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "OptimalUtilization"
                             }
                           ]
@@ -74,14 +59,14 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Slope1"
+                              "symbol": "RateMax"
                             }
                           ]
                         },
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 400000
+                            "lo": 10000000
                           }
                         }
                       },
@@ -89,14 +74,29 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Slope2"
+                              "symbol": "RateMin"
                             }
                           ]
                         },
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 7500000
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RateOpt"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 400000
                           }
                         }
                       }
@@ -226,7 +226,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 320000
+                "lo": 288000
               }
             }
           }

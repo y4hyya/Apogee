@@ -47,21 +47,6 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "BaseRate"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "i128": {
-                            "hi": 0,
-                            "lo": 0
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
                               "symbol": "OptimalUtilization"
                             }
                           ]
@@ -77,14 +62,14 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Slope1"
+                              "symbol": "RateMax"
                             }
                           ]
                         },
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 400000
+                            "lo": 10000000
                           }
                         }
                       },
@@ -92,14 +77,29 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Slope2"
+                              "symbol": "RateMin"
                             }
                           ]
                         },
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 7500000
+                            "lo": 0
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "RateOpt"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "i128": {
+                            "hi": 0,
+                            "lo": 400000
                           }
                         }
                       }
@@ -172,7 +172,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 7500000
+                    "lo": 10000000
                   }
                 },
                 {
@@ -224,7 +224,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "get_base_rate"
+                "symbol": "get_rate_min"
               }
             ],
             "data": "void"
@@ -245,7 +245,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_base_rate"
+                "symbol": "get_rate_min"
               }
             ],
             "data": {
@@ -274,7 +274,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "get_slope1"
+                "symbol": "get_rate_opt"
               }
             ],
             "data": "void"
@@ -295,7 +295,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_slope1"
+                "symbol": "get_rate_opt"
               }
             ],
             "data": {
@@ -324,7 +324,7 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "get_slope2"
+                "symbol": "get_rate_max"
               }
             ],
             "data": "void"
@@ -345,13 +345,13 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "get_slope2"
+                "symbol": "get_rate_max"
               }
             ],
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 7500000
+                "lo": 10000000
               }
             }
           }

@@ -689,24 +689,82 @@ impl LendingPool {
     /// - 80% utilization → 4% APR
     /// - 90% utilization → 41.5% APR
     /// - 100% utilization → 79% APR
+    /// Calculate the borrow rate using Drift Protocol's multi-kink model
+    /// 
+    /// ## Rate Curve Zones (from https://docs.drift.trade/lend-borrow/borrow-interest-rate)
+    /// 
+    /// | Utilization | Behavior | Cumulative ΔR |
+    /// |-------------|----------|---------------|
+    /// | 0% - U* | Linear to R_opt | 0% |
+    /// | U* - 85% | +5% of ΔR | 5% |
+    /// | 85% - 90% | +10% of ΔR | 15% |
+    /// | 90% - 95% | +15% of ΔR | 30% |
+    /// | 95% - 99% | +20% of ΔR | 50% |
+    /// | 99% - 100% | +50% of ΔR | 100% |
+    /// 
+    /// Where: ΔR = R_max - R_opt
     fn calculate_borrow_rate(utilization: i128) -> i128 {
-        // Model parameters (matching InterestRateModel contract defaults)
-        let base_rate: i128 = 0;           // 0%
-        let slope1: i128 = 400_000;        // 4%
-        let slope2: i128 = 7_500_000;      // 75%
-        let optimal: i128 = 8_000_000;     // 80%
+        // Model parameters (matching InterestRateModel contract)
+        let rate_min: i128 = 0;            // 0% minimum
+        let rate_opt: i128 = 400_000;      // 4% at optimal
+        let rate_max: i128 = 10_000_000;   // 100% maximum
+        let u_optimal: i128 = 8_000_000;   // 80% optimal utilization
 
-        if utilization <= optimal {
-            // Below or at optimal: linear increase with slope1
-            // rate = base_rate + (utilization / optimal) * slope1
-            base_rate + (utilization * slope1) / optimal
+        // Utilization thresholds
+        let u_85: i128 = 8_500_000;
+        let u_90: i128 = 9_000_000;
+        let u_95: i128 = 9_500_000;
+        let u_99: i128 = 9_900_000;
+
+        // ΔR = max - optimal
+        let delta_r = rate_max - rate_opt;
+
+        let raw_rate = if utilization <= u_optimal {
+            // Zone 1: Linear ramp from 0 to R_opt
+            (rate_opt * utilization) / u_optimal
+            
+        } else if utilization <= u_85 {
+            // Zone 2: U* to 85% - adds 5% of ΔR
+            let range = u_85 - u_optimal;
+            let progress = utilization - u_optimal;
+            let penalty = (delta_r * 50 * progress) / (range * 1000);
+            rate_opt + penalty
+            
+        } else if utilization <= u_90 {
+            // Zone 3: 85% to 90% - adds 10% of ΔR
+            let base_penalty = (delta_r * 50) / 1000;
+            let range = u_90 - u_85;
+            let progress = utilization - u_85;
+            let extra_penalty = (delta_r * 100 * progress) / (range * 1000);
+            rate_opt + base_penalty + extra_penalty
+            
+        } else if utilization <= u_95 {
+            // Zone 4: 90% to 95% - adds 15% of ΔR
+            let base_penalty = (delta_r * 150) / 1000;
+            let range = u_95 - u_90;
+            let progress = utilization - u_90;
+            let extra_penalty = (delta_r * 150 * progress) / (range * 1000);
+            rate_opt + base_penalty + extra_penalty
+            
+        } else if utilization <= u_99 {
+            // Zone 5: 95% to 99% - adds 20% of ΔR
+            let base_penalty = (delta_r * 300) / 1000;
+            let range = u_99 - u_95;
+            let progress = utilization - u_95;
+            let extra_penalty = (delta_r * 200 * progress) / (range * 1000);
+            rate_opt + base_penalty + extra_penalty
+            
         } else {
-            // Above optimal: steep increase with slope2
-            // excess = (utilization - optimal) / (100% - optimal)
-            // rate = base_rate + slope1 + excess * slope2
-            let excess_utilization = ((utilization - optimal) * SCALE) / (SCALE - optimal);
-            base_rate + slope1 + (excess_utilization * slope2) / SCALE
-        }
+            // Zone 6: 99% to 100% - adds 50% of ΔR
+            let base_penalty = (delta_r * 500) / 1000;
+            let range = SCALE - u_99;
+            let progress = if utilization >= SCALE { range } else { utilization - u_99 };
+            let extra_penalty = (delta_r * 500 * progress) / (range * 1000);
+            rate_opt + base_penalty + extra_penalty
+        };
+
+        // Apply minimum rate floor
+        if raw_rate < rate_min { rate_min } else { raw_rate }
     }
 
     // ========================================================================
