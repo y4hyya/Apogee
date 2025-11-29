@@ -151,7 +151,46 @@ cargo test -p stellend-interest-rate-model
 
 ## Deploying to Futurenet
 
-### 1. Create a Futurenet Account
+### Quick Deployment (Recommended)
+
+Use the automated deployment scripts:
+
+```bash
+# 1. Build contracts
+cd contracts
+cargo build --target wasm32-unknown-unknown --release
+
+# 2. Generate and fund deployer account
+soroban keys generate deployer --network futurenet
+curl "https://friendbot-futurenet.stellar.org/?addr=$(soroban keys address deployer)"
+
+# 3. Get secret key
+export SECRET_KEY=$(soroban keys show deployer)
+
+# 4. Deploy everything!
+cd ../scripts
+npm install
+npm run deploy-all
+
+# 5. Seed pool with liquidity
+npm run seed-pool
+
+# 6. Create a test user
+npm run fund-user -- --new
+```
+
+This will:
+- Deploy all 3 contracts (Pool, Oracle, Interest Rate Model)
+- Set up XLM and USDC tokens (via Stellar Asset Contract)
+- Initialize all contracts
+- Set initial prices ($0.30 XLM, $1.00 USDC)
+- Save everything to `scripts/deployment.json`
+
+### Manual Deployment
+
+For more control, you can deploy contracts manually:
+
+#### 1. Create a Futurenet Account
 
 ```bash
 # Generate a new keypair
@@ -161,7 +200,7 @@ soroban keys generate deployer --network futurenet
 curl "https://friendbot-futurenet.stellar.org/?addr=$(soroban keys address deployer)"
 ```
 
-### 2. Deploy Contracts
+#### 2. Deploy Contracts
 
 ```bash
 cd contracts
@@ -185,7 +224,7 @@ soroban contract deploy \
   --network futurenet
 ```
 
-### 3. Initialize Contracts
+#### 3. Initialize Contracts
 
 ```bash
 # Initialize Price Oracle
@@ -197,18 +236,13 @@ soroban contract invoke \
   initialize \
   --admin <ADMIN_ADDRESS>
 
-# Initialize Interest Rate Model
-# Base rate: 0%, Slope1: 4%, Slope2: 75%, Optimal: 80%
+# Initialize Interest Rate Model (uses default parameters)
 soroban contract invoke \
   --id <INTEREST_RATE_MODEL_CONTRACT_ID> \
   --source deployer \
   --network futurenet \
   -- \
-  initialize \
-  --base_rate 0 \
-  --slope1 400000 \
-  --slope2 7500000 \
-  --optimal_utilization 8000000
+  initialize_default
 
 # Initialize Lending Pool
 soroban contract invoke \
@@ -224,7 +258,7 @@ soroban contract invoke \
   --price_oracle <ORACLE_CONTRACT_ID>
 ```
 
-### 4. Set Initial Prices
+#### 4. Set Initial Prices
 
 ```bash
 # Set XLM price to $0.30 (3_000_000 with 7 decimals)
@@ -238,6 +272,32 @@ soroban contract invoke \
   --price 3000000
 ```
 
+## Seeding the Pool
+
+After deployment, add liquidity to the pool:
+
+```bash
+cd scripts
+
+# This creates a whale account, mints 1M USDC, and supplies 500K to the pool
+npm run seed-pool
+```
+
+## Creating Test Users
+
+Fund demo accounts for testing:
+
+```bash
+# Create a new user with 10K XLM + 10K USDC
+npm run fund-user -- --new
+
+# Fund an existing address
+npm run fund-user -- GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+# Custom amounts
+npm run fund-user -- --new --xlm 50000 --usdc 25000
+```
+
 ## Running the Price Keeper
 
 The price keeper script fetches real-time prices from CoinGecko and updates the oracle.
@@ -245,19 +305,48 @@ The price keeper script fetches real-time prices from CoinGecko and updates the 
 ```bash
 cd scripts
 
-# Install dependencies
+# Install dependencies (if not already done)
 npm install
 
-# Set environment variables
-export ORACLE_CONTRACT_ID="your_oracle_contract_id"
+# Set environment variables (or use deployment.json)
 export SECRET_KEY="your_deployer_secret_key"
+export ORACLE_CONTRACT_ID="your_oracle_contract_id"  # Optional if using deployment.json
 
 # Run price update (normal mode)
 npm run update-price
 
 # Run with chaos mode (50% price drop for testing liquidations)
 npm run update-price:crash
+
+# Use mock prices (no API call)
+npm run update-price:mock
 ```
+
+## Deployment Info
+
+After running `npm run deploy-all`, all contract IDs are saved to `scripts/deployment.json`:
+
+```json
+{
+  "network": "futurenet",
+  "contracts": {
+    "pool": "CXXXXXX...",
+    "oracle": "CXXXXXX...",
+    "interestRateModel": "CXXXXXX..."
+  },
+  "tokens": {
+    "xlm": "CXXXXXX...",
+    "usdc": "CXXXXXX...",
+    "usdcIssuer": "GXXXXXX..."
+  },
+  "accounts": {
+    "deployer": "GXXXXXX...",
+    "whale": "GXXXXXX..."
+  }
+}
+```
+
+Other scripts (`seed-pool`, `fund-user`, `update-price`) will automatically read from this file.
 
 ## Running the Frontend
 
