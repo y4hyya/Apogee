@@ -71,15 +71,47 @@ class SorobanContractService {
   constructor() {
     if (CONTRACTS.POOL) {
       this.poolContract = new Contract(CONTRACTS.POOL)
+      console.log("Pool contract configured:", CONTRACTS.POOL)
+    } else {
+      console.warn("Pool contract not configured. Set NEXT_PUBLIC_POOL_CONTRACT_ID in .env.local")
     }
+    
     if (CONTRACTS.PRICE_ORACLE) {
       this.oracleContract = new Contract(CONTRACTS.PRICE_ORACLE)
+      console.log("Oracle contract configured:", CONTRACTS.PRICE_ORACLE)
+    } else {
+      console.warn("Oracle contract not configured. Set NEXT_PUBLIC_ORACLE_CONTRACT_ID in .env.local")
     }
+    
+    // Log all contract configs for debugging
+    console.log("Contract configuration:", {
+      pool: CONTRACTS.POOL || "(not set)",
+      oracle: CONTRACTS.PRICE_ORACLE || "(not set)",
+      interestRateModel: CONTRACTS.INTEREST_RATE_MODEL || "(not set)",
+      xlmToken: CONTRACTS.XLM_TOKEN || "(not set)",
+      usdcToken: CONTRACTS.USDC_TOKEN || "(not set)",
+      network: NETWORK_CONFIG.sorobanRpcUrl,
+    })
   }
 
   // Check if contracts are configured
   isConfigured(): boolean {
     return !!(CONTRACTS.POOL && CONTRACTS.PRICE_ORACLE)
+  }
+
+  // Check if pool contract is properly initialized
+  async isPoolInitialized(): Promise<boolean> {
+    if (!this.poolContract) return false
+    
+    try {
+      // Try to call get_ltv_ratio - this will fail if not initialized
+      const result = await this.callContract("get_ltv_ratio", [
+        nativeToScVal("XLM", { type: "symbol" })
+      ])
+      return result !== null
+    } catch {
+      return false
+    }
   }
 
   // Get price from oracle
@@ -295,7 +327,41 @@ class SorobanContractService {
     const simResult = await sorobanServer.simulateTransaction(transaction)
 
     if (!SorobanRpc.Api.isSimulationSuccess(simResult)) {
-      throw new Error("Transaction simulation failed")
+      // Extract detailed error message from simulation result
+      let errorMessage = "Transaction simulation failed"
+      
+      if (SorobanRpc.Api.isSimulationError(simResult)) {
+        errorMessage = simResult.error || errorMessage
+        console.error("Simulation error details:", JSON.stringify(simResult, null, 2))
+      } else if (SorobanRpc.Api.isSimulationRestore(simResult)) {
+        errorMessage = "Contract state needs restoration. Please try again."
+        console.error("Simulation needs restore:", simResult)
+      }
+      
+      // Try to parse common Soroban error patterns
+      const lowerError = errorMessage.toLowerCase()
+      
+      if (lowerError.includes("hostfunction") || lowerError.includes("host function")) {
+        errorMessage = "Contract call failed. The contract may not be initialized properly."
+      } else if (lowerError.includes("budget") || lowerError.includes("exceeded")) {
+        errorMessage = "Transaction too complex. Try a smaller amount."
+      } else if (lowerError.includes("storage") || lowerError.includes("missingvalue")) {
+        errorMessage = "Contract storage error. The contract may not be initialized."
+      } else if (lowerError.includes("auth") || lowerError.includes("authorization")) {
+        errorMessage = "Authorization failed. Please ensure your wallet is connected."
+      } else if (lowerError.includes("insufficient") || lowerError.includes("balance")) {
+        errorMessage = "Insufficient balance. Make sure you have enough tokens."
+      } else if (lowerError.includes("panic") || lowerError.includes("trap")) {
+        // Try to extract the panic message
+        const panicMatch = errorMessage.match(/panic:?\s*["']?([^"'\n]+)["']?/i)
+        if (panicMatch) {
+          errorMessage = panicMatch[1]
+        } else {
+          errorMessage = "Contract panicked. Check the contract parameters."
+        }
+      }
+      
+      throw new Error(errorMessage)
     }
 
     // Prepare the transaction
@@ -359,6 +425,12 @@ class SorobanContractService {
   // Deposit collateral
   async buildDepositCollateralTx(userAddress: string, asset: "XLM" | "USDC", amount: number): Promise<string> {
     if (!this.poolContract) throw new Error("Pool contract not configured")
+    
+    // Validate inputs
+    if (!userAddress) throw new Error("User address is required")
+    if (amount <= 0) throw new Error("Amount must be greater than 0")
+
+    console.log(`Building deposit_collateral tx: user=${userAddress}, asset=${asset}, amount=${amount}`)
 
     const operation = this.poolContract.call(
       "deposit_collateral",
@@ -367,7 +439,21 @@ class SorobanContractService {
       nativeToScVal(toContractAmount(amount), { type: "i128" })
     )
 
-    return this.buildTransaction(userAddress, operation)
+    try {
+      return await this.buildTransaction(userAddress, operation)
+    } catch (error: any) {
+      // Provide more specific error messages for deposit_collateral
+      if (error.message?.includes("not enabled as collateral")) {
+        throw new Error("XLM is not enabled as collateral on this pool. The contract may need to be initialized.")
+      }
+      if (error.message?.includes("Storage")) {
+        throw new Error("Pool contract is not initialized. Please run the deploy script first.")
+      }
+      if (error.message?.includes("transfer")) {
+        throw new Error("Token transfer failed. Make sure you have enough XLM in your wallet.")
+      }
+      throw error
+    }
   }
 
   // Withdraw collateral
@@ -415,6 +501,20 @@ class SorobanContractService {
 
 // Export singleton instance
 export const sorobanService = new SorobanContractService()
+
+// Helper to ensure pool is initialized before operations
+async function ensurePoolInitialized(): Promise<void> {
+  if (!sorobanService.isConfigured()) {
+    throw new Error("Contracts not configured. Make sure .env.local has the contract addresses.")
+  }
+  
+  const isInitialized = await sorobanService.isPoolInitialized()
+  if (!isInitialized) {
+    throw new Error(
+      "Pool contract is not initialized. Please run 'npm run deploy-all' in the scripts folder to initialize the contracts."
+    )
+  }
+}
 
 // === API compatible with mock-contract-api ===
 // This allows gradual migration from mock to real
@@ -532,6 +632,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildDepositCollateralTx(userAddress, "XLM", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
@@ -543,6 +644,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildWithdrawCollateralTx(userAddress, "XLM", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
@@ -554,6 +656,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildBorrowTx(userAddress, "USDC", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
@@ -565,6 +668,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildRepayTx(userAddress, "USDC", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
@@ -576,6 +680,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildSupplyTx(userAddress, "USDC", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
@@ -587,6 +692,7 @@ export const stellendContractAPI = {
     amount: number,
     signTx: (xdr: string) => Promise<string>
   ): Promise<boolean> => {
+    await ensurePoolInitialized()
     const txXdr = await sorobanService.buildWithdrawTx(userAddress, "USDC", amount)
     const signedXdr = await signTx(txXdr)
     await sorobanService.submitTransaction(signedXdr)
