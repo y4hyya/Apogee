@@ -16,12 +16,12 @@ export const CONTRACTS = {
   USDC_TOKEN: process.env.NEXT_PUBLIC_USDC_TOKEN_ID || "",
 }
 
-// Network configuration
+// Network configuration - TESTNET
 export const NETWORK_CONFIG = {
-  network: "FUTURENET" as const,
-  networkPassphrase: "Test SDF Future Network ; October 2022",
-  horizonUrl: "https://horizon-futurenet.stellar.org",
-  sorobanRpcUrl: "https://rpc-futurenet.stellar.org",
+  network: "TESTNET" as const,
+  networkPassphrase: "Test SDF Network ; September 2015",
+  horizonUrl: "https://horizon-testnet.stellar.org",
+  sorobanRpcUrl: "https://soroban-testnet.stellar.org",
 }
 
 // Asset configuration

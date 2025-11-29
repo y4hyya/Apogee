@@ -11,12 +11,12 @@ import {
   signTransaction,
 } from "@stellar/freighter-api"
 
-// Network configuration
+// Network configuration - TESTNET
 export const NETWORK = {
-  name: "FUTURENET",
-  networkPassphrase: "Test SDF Future Network ; October 2022",
-  horizonUrl: "https://horizon-futurenet.stellar.org",
-  sorobanRpcUrl: "https://rpc-futurenet.stellar.org",
+  name: "TESTNET",
+  networkPassphrase: "Test SDF Network ; September 2015",
+  horizonUrl: "https://horizon-testnet.stellar.org",
+  sorobanRpcUrl: "https://soroban-testnet.stellar.org",
 }
 
 interface WalletContextType {
@@ -113,9 +113,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const networkName = await getNetwork()
       setNetwork(networkName || null)
 
-      // Warn if not on Futurenet
-      if (networkName && networkName !== "FUTURENET") {
-        console.warn(`Warning: Connected to ${networkName}. Please switch to FUTURENET for Stellend.`)
+      // Warn if not on Testnet
+      if (networkName && networkName !== "TESTNET") {
+        console.warn(`Warning: Connected to ${networkName}. Please switch to TESTNET for Stellend.`)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to connect wallet"

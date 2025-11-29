@@ -23,7 +23,7 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
   const getNetworkBadge = () => {
     if (!network) return null
     
-    const isCorrectNetwork = network === "FUTURENET"
+    const isCorrectNetwork = network === "TESTNET"
     return (
       <span 
         className={`text-xs px-2 py-0.5 rounded-full ${
@@ -119,9 +119,9 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
       </div>
       
       {/* Network Warning Banner */}
-      {isConnected && network && network !== "FUTURENET" && (
+      {isConnected && network && network !== "TESTNET" && (
         <div className="bg-yellow-500/10 border-t border-yellow-500/20 px-4 py-2 text-center text-sm text-yellow-400">
-          ⚠️ Please switch to Futurenet in Freighter to use Stellend
+          ⚠️ Please switch to Testnet in Freighter to use Stellend
         </div>
       )}
     </nav>
