@@ -1,16 +1,13 @@
-[package]
-name = "collateral"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = [
+    "pool",
+    "interest_rate_model",
+    "price_oracle",
+]
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-soroban-sdk = "20.0.0"
-
-[dev-dependencies]
-soroban-sdk = { version = "20.0.0", features = ["testutils"] }
+[workspace.dependencies]
+soroban-sdk = "21.7.6"
 
 [profile.release]
 opt-level = "z"

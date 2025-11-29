@@ -1,0 +1,19 @@
+[package]
+name = "stellend-pool"
+version = "0.1.0"
+edition = "2021"
+description = "Stellend Lending Pool Contract - Main lending pool logic for deposits, withdrawals, borrowing, and repayment"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+

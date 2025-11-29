@@ -1,0 +1,19 @@
+[package]
+name = "stellend-price-oracle"
+version = "0.1.0"
+edition = "2021"
+description = "Stellend Price Oracle Contract - On-chain price storage for XLM/USD and USDC/USD"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+

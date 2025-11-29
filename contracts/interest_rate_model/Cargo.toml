@@ -1,0 +1,19 @@
+[package]
+name = "stellend-interest-rate-model"
+version = "0.1.0"
+edition = "2021"
+description = "Stellend Interest Rate Model Contract - Pure logic for calculating borrow/supply rates based on utilization"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
