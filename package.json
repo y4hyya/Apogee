@@ -1,0 +1,26 @@
+{
+  "name": "stellend",
+  "version": "0.1.0",
+  "description": "Lending Protocol on Stellar Ecosystem",
+  "private": true,
+  "workspaces": [
+    "sdk",
+    "frontend"
+  ],
+  "scripts": {
+    "build:contracts": "cd contracts && cargo build --target wasm32-unknown-unknown --release",
+    "test:contracts": "cd contracts && cargo test",
+    "build:sdk": "cd sdk && npm run build",
+    "test:sdk": "cd sdk && npm test"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "lending",
+    "defi",
+    "blockchain"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+
