@@ -8,6 +8,10 @@ dist/
 build/
 *.wasm
 
+# Next.js build output
+.next/
+out/
+
 # Environment variables
 .env
 .env.local

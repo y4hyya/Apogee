@@ -1,6 +1,0 @@
-__turbopack_load_page_chunks__("/lend-withdraw", [
-  "static/chunks/6998a7a05adf5323.js",
-  "static/chunks/ec21f6b9c7a75587.js",
-  "static/chunks/eeeb121ed9dc91dd.js",
-  "static/chunks/turbopack-e6aefb68059f9dbd.js"
-])
