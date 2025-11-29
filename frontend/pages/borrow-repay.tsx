@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label"
 import { HealthFactorIndicator } from "@/components/health-factor-indicator"
 import { stellendContractAPI, sorobanService, type DashboardData } from "@/services/soroban-service"
 import { useWallet } from "@/hooks/use-wallet"
-import { TrendingDown, TrendingUp, AlertTriangle, DollarSign, Loader2 } from "lucide-react"
+import { useTransaction, getButtonText } from "@/hooks/use-transaction"
+import { OPERATION_ERRORS } from "@/utils/errors"
+import { TrendingDown, TrendingUp, AlertTriangle, DollarSign, Loader2, CheckCircle, AlertCircle, Calculator } from "lucide-react"
 import { toast } from "sonner"
 
 export default function BorrowRepayPage() {
@@ -19,7 +21,6 @@ export default function BorrowRepayPage() {
   const [loading, setLoading] = useState(true)
   const [borrowAmount, setBorrowAmount] = useState("")
   const [repayAmount, setRepayAmount] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -33,10 +34,30 @@ export default function BorrowRepayPage() {
       setXlmPrice(price)
     } catch (error) {
       console.error("Failed to load data:", error)
+      toast.error("Failed to load data", {
+        description: "Could not fetch on-chain data. Please refresh."
+      })
     } finally {
       setLoading(false)
     }
   }, [publicKey])
+
+  // Transaction hooks
+  const borrowTx = useTransaction({
+    successMessage: "Successfully borrowed USDC!",
+    onSuccess: async () => {
+      setBorrowAmount("")
+      await loadData()
+    }
+  })
+
+  const repayTx = useTransaction({
+    successMessage: "Successfully repaid debt!",
+    onSuccess: async () => {
+      setRepayAmount("")
+      await loadData()
+    }
+  })
 
   useEffect(() => {
     if (isConnected) {
@@ -44,11 +65,69 @@ export default function BorrowRepayPage() {
     }
   }, [isConnected, loadData])
 
+  // Validate borrow amount
+  const validateBorrow = (amount: number): string | null => {
+    if (!amount || amount <= 0) return "Please enter a valid amount"
+    if (!dashboardData) return "Loading..."
+    
+    const availableToBorrow = dashboardData.borrowLimit - dashboardData.userDebt_sUSDC
+    if (amount > availableToBorrow) {
+      return OPERATION_ERRORS.borrow.ltvExceeded
+    }
+    
+    // Check pool liquidity
+    const poolLiquidity = dashboardData.poolTotalSupply_sUSDC - dashboardData.poolTotalBorrowed_sUSDC
+    if (amount > poolLiquidity) {
+      return OPERATION_ERRORS.borrow.insufficientLiquidity
+    }
+    
+    // Check if user has collateral
+    if (dashboardData.userCollateral_USD <= 0) {
+      return OPERATION_ERRORS.borrow.insufficientCollateral
+    }
+    
+    return null
+  }
+
+  // Validate repay amount
+  const validateRepay = (amount: number): string | null => {
+    if (!amount || amount <= 0) return "Please enter a valid amount"
+    if (!dashboardData) return "Loading..."
+    
+    if (dashboardData.userDebt_sUSDC <= 0) {
+      return OPERATION_ERRORS.repay.noDebt
+    }
+    
+    if (walletBalances && amount > walletBalances.sUSDC) {
+      return OPERATION_ERRORS.repay.insufficientBalance
+    }
+    
+    return null
+  }
+
+  // Calculate new health factor after borrow
+  const calculateNewHealthFactor = (borrowAmount: number): number => {
+    if (!dashboardData || dashboardData.userCollateral_USD <= 0) return 0
+    const newDebt = dashboardData.userDebt_sUSDC + borrowAmount
+    if (newDebt <= 0) return 999
+    return (dashboardData.userCollateral_USD * 0.8) / newDebt // 80% liquidation threshold
+  }
+
   const handleBorrow = async () => {
     const amount = parseFloat(borrowAmount)
-    if (!amount || amount <= 0) {
-      toast.error("Please enter a valid amount")
+    const error = validateBorrow(amount)
+    if (error) {
+      toast.error("Cannot Borrow", { description: error })
       return
+    }
+
+    // Warn if health factor would be low
+    const newHF = calculateNewHealthFactor(amount)
+    if (newHF < 1.5) {
+      toast.warning("Warning: Low Health Factor", {
+        description: `Borrowing this amount would set your Health Factor to ${newHF.toFixed(2)}. This is risky!`,
+        duration: 5000,
+      })
     }
 
     if (!publicKey) {
@@ -56,23 +135,16 @@ export default function BorrowRepayPage() {
       return
     }
 
-    setIsProcessing(true)
-    try {
-      await stellendContractAPI.borrow(publicKey, amount, signTx)
-      toast.success(`Successfully borrowed ${amount} USDC`)
-      setBorrowAmount("")
-      await loadData()
-    } catch (error: any) {
-      toast.error(error.message || "Failed to borrow")
-    } finally {
-      setIsProcessing(false)
-    }
+    await borrowTx.execute(() =>
+      stellendContractAPI.borrow(publicKey, amount, signTx)
+    )
   }
 
   const handleRepay = async () => {
     const amount = parseFloat(repayAmount)
-    if (!amount || amount <= 0) {
-      toast.error("Please enter a valid amount")
+    const error = validateRepay(amount)
+    if (error) {
+      toast.error("Cannot Repay", { description: error })
       return
     }
 
@@ -81,18 +153,12 @@ export default function BorrowRepayPage() {
       return
     }
 
-    setIsProcessing(true)
-    try {
-      await stellendContractAPI.repay(publicKey, amount, signTx)
-      toast.success(`Successfully repaid ${amount} USDC`)
-      setRepayAmount("")
-      await loadData()
-    } catch (error: any) {
-      toast.error(error.message || "Failed to repay")
-    } finally {
-      setIsProcessing(false)
-    }
+    await repayTx.execute(() =>
+      stellendContractAPI.repay(publicKey, amount, signTx)
+    )
   }
+
+  const isProcessing = borrowTx.isLoading || repayTx.isLoading
 
   if (loading || !dashboardData || !walletBalances) {
     return (
@@ -106,6 +172,14 @@ export default function BorrowRepayPage() {
   }
 
   const availableToBorrow = Math.max(0, dashboardData.borrowLimit - dashboardData.userDebt_sUSDC)
+  const poolLiquidity = dashboardData.poolTotalSupply_sUSDC - dashboardData.poolTotalBorrowed_sUSDC
+  const maxBorrow = Math.min(availableToBorrow, poolLiquidity)
+  const hasNoCollateral = dashboardData.userCollateral_USD <= 0
+  const isAtRisk = dashboardData.healthFactor < 1.5 && dashboardData.userDebt_sUSDC > 0
+
+  // Calculate projected HF for the borrow preview
+  const borrowPreviewAmount = parseFloat(borrowAmount) || 0
+  const projectedHF = borrowPreviewAmount > 0 ? calculateNewHealthFactor(borrowPreviewAmount) : null
 
   return (
     <div className="p-8 space-y-8 bg-gradient-to-br from-background via-background/95 to-primary/3 min-h-screen">
@@ -113,6 +187,20 @@ export default function BorrowRepayPage() {
         <h1 className="text-3xl font-bold mb-2">Borrow & Repay</h1>
         <p className="text-muted-foreground">Borrow assets using your collateral or repay existing debt</p>
       </div>
+
+      {/* No Collateral Warning */}
+      {hasNoCollateral && (
+        <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5" />
+          <div>
+            <p className="font-medium text-yellow-500">No Collateral Deposited</p>
+            <p className="text-sm text-muted-foreground">
+              You need to deposit XLM as collateral before you can borrow. 
+              Go to the Collateral page to deposit.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Health Factor */}
       <HealthFactorIndicator
@@ -124,7 +212,7 @@ export default function BorrowRepayPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Borrow */}
-        <Card className="glass-panel border-white/10">
+        <Card className={`glass-panel border-white/10 ${hasNoCollateral ? "opacity-60" : ""}`}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingDown className="w-5 h-5 text-purple-500" />
@@ -141,31 +229,59 @@ export default function BorrowRepayPage() {
                 placeholder="0.00"
                 value={borrowAmount}
                 onChange={(e) => setBorrowAmount(e.target.value)}
-                disabled={isProcessing}
+                disabled={isProcessing || hasNoCollateral}
+                className={borrowTx.state === "error" ? "border-red-500" : ""}
               />
               <div className="space-y-1 text-sm">
-                <p className="text-muted-foreground">
-                  Available to borrow: ${availableToBorrow.toLocaleString()} USDC
-                </p>
-                <p className="text-muted-foreground">
-                  Borrow APY: {(dashboardData.borrowAPR * 100).toFixed(2)}%
-                </p>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Available to borrow:</span>
+                  <span className={maxBorrow <= 0 ? "text-red-500" : ""}>
+                    ${maxBorrow.toLocaleString()} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Borrow APY:</span>
+                  <span className="text-purple-500">{(dashboardData.borrowAPR * 100).toFixed(2)}%</span>
+                </div>
               </div>
             </div>
+
+            {/* Projected Health Factor Preview */}
+            {projectedHF !== null && projectedHF < 999 && (
+              <div className={`p-3 rounded-lg flex items-center gap-2 ${
+                projectedHF < 1.0 ? "bg-red-500/20 border border-red-500/30" :
+                projectedHF < 1.5 ? "bg-yellow-500/20 border border-yellow-500/30" :
+                "bg-green-500/20 border border-green-500/30"
+              }`}>
+                <Calculator className="w-4 h-4" />
+                <span className="text-sm">
+                  Projected Health Factor: <strong>{projectedHF.toFixed(2)}</strong>
+                  {projectedHF < 1.0 && " ⚠️ Position would be liquidatable!"}
+                  {projectedHF >= 1.0 && projectedHF < 1.5 && " ⚠️ Risky"}
+                </span>
+              </div>
+            )}
+
             <Button 
               onClick={handleBorrow} 
-              disabled={isProcessing || !isConnected || availableToBorrow <= 0} 
+              disabled={isProcessing || !isConnected || maxBorrow <= 0 || hasNoCollateral || !borrowAmount} 
               className="w-full"
             >
-              {isProcessing ? (
+              {borrowTx.isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Signing Transaction...
+                  {getButtonText(borrowTx.state, "Borrow USDC")}
+                </>
+              ) : borrowTx.state === "success" ? (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Borrowed!
                 </>
               ) : (
                 "Borrow USDC"
               )}
             </Button>
+
             <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
               <div className="flex items-start gap-2">
                 <DollarSign className="w-5 h-5 text-purple-500 mt-0.5" />
@@ -175,7 +291,7 @@ export default function BorrowRepayPage() {
                     {dashboardData.userDebt_sUSDC.toLocaleString()} USDC
                   </p>
                   <p className="text-muted-foreground mt-1">
-                    Borrow Limit: ${dashboardData.borrowLimit.toLocaleString()}
+                    Borrow Limit: ${dashboardData.borrowLimit.toLocaleString()} (75% LTV)
                   </p>
                 </div>
               </div>
@@ -184,11 +300,12 @@ export default function BorrowRepayPage() {
         </Card>
 
         {/* Repay */}
-        <Card className="glass-panel border-white/10">
+        <Card className={`glass-panel border-white/10 ${isAtRisk ? "ring-1 ring-orange-500/50" : ""}`}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-500" />
               Repay Debt
+              {isAtRisk && <span className="text-xs bg-orange-500/20 text-orange-500 px-2 py-0.5 rounded">Recommended</span>}
             </CardTitle>
             <CardDescription>Repay your borrowed USDC to reduce debt and improve health factor</CardDescription>
           </CardHeader>
@@ -202,40 +319,53 @@ export default function BorrowRepayPage() {
                 value={repayAmount}
                 onChange={(e) => setRepayAmount(e.target.value)}
                 disabled={isProcessing}
+                className={repayTx.state === "error" ? "border-red-500" : ""}
               />
               <div className="space-y-1 text-sm">
-                <p className="text-muted-foreground">
-                  Current debt: {dashboardData.userDebt_sUSDC.toLocaleString()} USDC
-                </p>
-                <p className="text-muted-foreground">
-                  Wallet balance: {walletBalances.sUSDC.toLocaleString()} USDC
-                </p>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Current debt:</span>
+                  <span>{dashboardData.userDebt_sUSDC.toLocaleString()} USDC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Wallet balance:</span>
+                  <span>{walletBalances.sUSDC.toLocaleString()} USDC</span>
+                </div>
               </div>
             </div>
+
             <div className="flex gap-2">
               <Button
-                onClick={() => setRepayAmount(dashboardData.userDebt_sUSDC.toString())}
+                onClick={() => {
+                  const maxRepay = Math.min(dashboardData.userDebt_sUSDC, walletBalances.sUSDC)
+                  setRepayAmount(maxRepay.toString())
+                }}
                 variant="outline"
                 className="flex-1"
-                disabled={isProcessing}
+                disabled={isProcessing || dashboardData.userDebt_sUSDC <= 0}
               >
                 Max
               </Button>
               <Button 
                 onClick={handleRepay} 
-                disabled={isProcessing || !isConnected || dashboardData.userDebt_sUSDC <= 0} 
-                className="flex-1"
+                disabled={isProcessing || !isConnected || dashboardData.userDebt_sUSDC <= 0 || !repayAmount} 
+                className={`flex-1 ${isAtRisk ? "bg-green-600 hover:bg-green-700" : ""}`}
               >
-                {isProcessing ? (
+                {repayTx.isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing...
+                    {getButtonText(repayTx.state, "Repay", { signingText: "Signing..." })}
+                  </>
+                ) : repayTx.state === "success" ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Repaid!
                   </>
                 ) : (
                   "Repay"
                 )}
               </Button>
             </div>
+
             <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-5 h-5 text-green-500 mt-0.5" />
@@ -243,6 +373,7 @@ export default function BorrowRepayPage() {
                   <p className="font-semibold mb-1">Tip</p>
                   <p className="text-muted-foreground">
                     Repaying debt will improve your health factor and reduce interest payments.
+                    {isAtRisk && " Your position is at risk - consider repaying now!"}
                   </p>
                 </div>
               </div>

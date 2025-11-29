@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { stellendContractAPI, type DashboardData } from "@/services/soroban-service"
 import { useWallet } from "@/hooks/use-wallet"
-import { TrendingUp, TrendingDown, DollarSign, Info, Loader2 } from "lucide-react"
+import { useTransaction, getButtonText } from "@/hooks/use-transaction"
+import { OPERATION_ERRORS } from "@/utils/errors"
+import { TrendingUp, TrendingDown, DollarSign, Info, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
 
 export default function LendWithdrawPage() {
@@ -17,7 +19,6 @@ export default function LendWithdrawPage() {
   const [loading, setLoading] = useState(true)
   const [supplyAmount, setSupplyAmount] = useState("")
   const [withdrawAmount, setWithdrawAmount] = useState("")
-  const [isProcessing, setIsProcessing] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -29,10 +30,30 @@ export default function LendWithdrawPage() {
       setWalletBalances(balances)
     } catch (error) {
       console.error("Failed to load data:", error)
+      toast.error("Failed to load data", {
+        description: "Could not fetch on-chain data. Please refresh."
+      })
     } finally {
       setLoading(false)
     }
   }, [publicKey])
+
+  // Transaction hooks with proper success callbacks
+  const supplyTx = useTransaction({
+    successMessage: "Successfully supplied USDC!",
+    onSuccess: async () => {
+      setSupplyAmount("")
+      await loadData()
+    }
+  })
+
+  const withdrawTx = useTransaction({
+    successMessage: "Successfully withdrew USDC!",
+    onSuccess: async () => {
+      setWithdrawAmount("")
+      await loadData()
+    }
+  })
 
   useEffect(() => {
     if (isConnected) {
@@ -40,10 +61,37 @@ export default function LendWithdrawPage() {
     }
   }, [isConnected, loadData])
 
+  // Validate supply amount
+  const validateSupply = (amount: number): string | null => {
+    if (!amount || amount <= 0) return "Please enter a valid amount"
+    if (amount < 1) return OPERATION_ERRORS.supply.minAmount
+    if (walletBalances && amount > walletBalances.sUSDC) {
+      return OPERATION_ERRORS.supply.insufficientBalance
+    }
+    return null
+  }
+
+  // Validate withdraw amount
+  const validateWithdraw = (amount: number): string | null => {
+    if (!amount || amount <= 0) return "Please enter a valid amount"
+    if (dashboardData && amount > dashboardData.userSupply_sUSDC) {
+      return OPERATION_ERRORS.withdraw.insufficientSupply
+    }
+    // Check pool liquidity
+    if (dashboardData) {
+      const availableLiquidity = dashboardData.poolTotalSupply_sUSDC - dashboardData.poolTotalBorrowed_sUSDC
+      if (amount > availableLiquidity) {
+        return OPERATION_ERRORS.withdraw.insufficientLiquidity
+      }
+    }
+    return null
+  }
+
   const handleSupply = async () => {
     const amount = parseFloat(supplyAmount)
-    if (!amount || amount <= 0) {
-      toast.error("Please enter a valid amount")
+    const error = validateSupply(amount)
+    if (error) {
+      toast.error("Invalid Amount", { description: error })
       return
     }
 
@@ -52,23 +100,16 @@ export default function LendWithdrawPage() {
       return
     }
 
-    setIsProcessing(true)
-    try {
-      await stellendContractAPI.supplyLiquidity(publicKey, amount, signTx)
-      toast.success(`Successfully supplied ${amount} USDC to the pool`)
-      setSupplyAmount("")
-      await loadData()
-    } catch (error: any) {
-      toast.error(error.message || "Failed to supply liquidity")
-    } finally {
-      setIsProcessing(false)
-    }
+    await supplyTx.execute(() => 
+      stellendContractAPI.supplyLiquidity(publicKey, amount, signTx)
+    )
   }
 
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount)
-    if (!amount || amount <= 0) {
-      toast.error("Please enter a valid amount")
+    const error = validateWithdraw(amount)
+    if (error) {
+      toast.error("Invalid Amount", { description: error })
       return
     }
 
@@ -77,18 +118,12 @@ export default function LendWithdrawPage() {
       return
     }
 
-    setIsProcessing(true)
-    try {
-      await stellendContractAPI.withdrawLiquidity(publicKey, amount, signTx)
-      toast.success(`Successfully withdrew ${amount} USDC from the pool`)
-      setWithdrawAmount("")
-      await loadData()
-    } catch (error: any) {
-      toast.error(error.message || "Failed to withdraw liquidity")
-    } finally {
-      setIsProcessing(false)
-    }
+    await withdrawTx.execute(() =>
+      stellendContractAPI.withdrawLiquidity(publicKey, amount, signTx)
+    )
   }
+
+  const isProcessing = supplyTx.isLoading || withdrawTx.isLoading
 
   if (loading || !dashboardData || !walletBalances) {
     return (
@@ -101,12 +136,30 @@ export default function LendWithdrawPage() {
     )
   }
 
+  // Calculate available liquidity for warnings
+  const availableLiquidity = dashboardData.poolTotalSupply_sUSDC - dashboardData.poolTotalBorrowed_sUSDC
+  const showLiquidityWarning = dashboardData.poolUtilization > 0.9
+
   return (
     <div className="p-8 space-y-8 bg-gradient-to-br from-background via-background/95 to-primary/3 min-h-screen">
       <div>
         <h1 className="text-3xl font-bold mb-2">Lend & Withdraw</h1>
         <p className="text-muted-foreground">Supply assets to the lending pool and earn interest</p>
       </div>
+
+      {/* High Utilization Warning */}
+      {showLiquidityWarning && (
+        <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5" />
+          <div>
+            <p className="font-medium text-yellow-500">High Pool Utilization</p>
+            <p className="text-sm text-muted-foreground">
+              Pool is {(dashboardData.poolUtilization * 100).toFixed(0)}% utilized. 
+              Only ${availableLiquidity.toLocaleString()} USDC available for withdrawal.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Supply Liquidity */}
@@ -128,26 +181,45 @@ export default function LendWithdrawPage() {
                 value={supplyAmount}
                 onChange={(e) => setSupplyAmount(e.target.value)}
                 disabled={isProcessing}
+                className={supplyTx.state === "error" ? "border-red-500" : ""}
               />
-              <div className="space-y-1 text-sm">
+              <div className="flex justify-between text-sm">
                 <p className="text-muted-foreground">
-                  Wallet Balance: {walletBalances.sUSDC.toLocaleString()} USDC
+                  Balance: {walletBalances.sUSDC.toLocaleString()} USDC
                 </p>
-                <p className="text-green-500 font-semibold">
-                  Supply APR: {(dashboardData.supplyAPR * 100).toFixed(2)}%
-                </p>
+                <button 
+                  className="text-primary hover:underline"
+                  onClick={() => setSupplyAmount(walletBalances.sUSDC.toString())}
+                  disabled={isProcessing}
+                >
+                  Max
+                </button>
               </div>
+              <p className="text-green-500 font-semibold text-sm">
+                Supply APR: {(dashboardData.supplyAPR * 100).toFixed(2)}%
+              </p>
             </div>
-            <Button onClick={handleSupply} disabled={isProcessing || !isConnected} className="w-full">
-              {isProcessing ? (
+            
+            <Button 
+              onClick={handleSupply} 
+              disabled={isProcessing || !isConnected || !supplyAmount} 
+              className="w-full"
+            >
+              {supplyTx.isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Signing Transaction...
+                  {getButtonText(supplyTx.state, "Supply USDC")}
+                </>
+              ) : supplyTx.state === "success" ? (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Success!
                 </>
               ) : (
                 "Supply USDC"
               )}
             </Button>
+
             <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
               <div className="flex items-start gap-2">
                 <DollarSign className="w-5 h-5 text-green-500 mt-0.5" />
@@ -184,16 +256,24 @@ export default function LendWithdrawPage() {
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
                 disabled={isProcessing}
+                className={withdrawTx.state === "error" ? "border-red-500" : ""}
               />
-              <div className="space-y-1 text-sm">
+              <div className="flex justify-between text-sm">
                 <p className="text-muted-foreground">
-                  Available to withdraw: {dashboardData.userSupply_sUSDC.toLocaleString()} USDC
+                  Your supply: {dashboardData.userSupply_sUSDC.toLocaleString()} USDC
+                </p>
+                <p className="text-muted-foreground">
+                  Available: ${Math.min(dashboardData.userSupply_sUSDC, availableLiquidity).toLocaleString()}
                 </p>
               </div>
             </div>
+            
             <div className="flex gap-2">
               <Button
-                onClick={() => setWithdrawAmount(dashboardData.userSupply_sUSDC.toString())}
+                onClick={() => {
+                  const maxWithdraw = Math.min(dashboardData.userSupply_sUSDC, availableLiquidity)
+                  setWithdrawAmount(maxWithdraw.toString())
+                }}
                 variant="outline"
                 className="flex-1"
                 disabled={isProcessing}
@@ -202,20 +282,26 @@ export default function LendWithdrawPage() {
               </Button>
               <Button 
                 onClick={handleWithdraw} 
-                disabled={isProcessing || !isConnected || dashboardData.userSupply_sUSDC <= 0} 
+                disabled={isProcessing || !isConnected || dashboardData.userSupply_sUSDC <= 0 || !withdrawAmount} 
                 variant="outline" 
                 className="flex-1"
               >
-                {isProcessing ? (
+                {withdrawTx.isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing...
+                    {getButtonText(withdrawTx.state, "Withdraw", { signingText: "Signing..." })}
+                  </>
+                ) : withdrawTx.state === "success" ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Done!
                   </>
                 ) : (
                   "Withdraw"
                 )}
               </Button>
             </div>
+
             <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
               <div className="flex items-start gap-2">
                 <Info className="w-5 h-5 text-orange-500 mt-0.5" />
@@ -223,6 +309,7 @@ export default function LendWithdrawPage() {
                   <p className="font-semibold mb-1">Note</p>
                   <p className="text-muted-foreground">
                     Withdrawing will stop earning interest on the withdrawn amount.
+                    {showLiquidityWarning && " Withdrawals may be limited due to high utilization."}
                   </p>
                 </div>
               </div>
@@ -237,7 +324,7 @@ export default function LendWithdrawPage() {
           <CardTitle>Pool Statistics</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Pool Supply</p>
               <p className="text-2xl font-bold">${dashboardData.poolTotalSupply_sUSDC.toLocaleString()}</p>
@@ -247,8 +334,14 @@ export default function LendWithdrawPage() {
               <p className="text-2xl font-bold">${dashboardData.poolTotalBorrowed_sUSDC.toLocaleString()}</p>
             </div>
             <div>
+              <p className="text-sm text-muted-foreground mb-1">Available Liquidity</p>
+              <p className="text-2xl font-bold">${availableLiquidity.toLocaleString()}</p>
+            </div>
+            <div>
               <p className="text-sm text-muted-foreground mb-1">Pool Utilization</p>
-              <p className="text-2xl font-bold">{(dashboardData.poolUtilization * 100).toFixed(1)}%</p>
+              <p className={`text-2xl font-bold ${showLiquidityWarning ? "text-yellow-500" : ""}`}>
+                {(dashboardData.poolUtilization * 100).toFixed(1)}%
+              </p>
             </div>
           </div>
         </CardContent>

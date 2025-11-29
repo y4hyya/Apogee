@@ -9,7 +9,9 @@ import { MarketsOverview } from "@/components/markets-overview"
 import { stellendContractAPI, sorobanService, type DashboardData, type MarketData } from "@/services/soroban-service"
 import { generateMockTransactions, generateMockChartData } from "@/services/mock-data-generator"
 import { useWallet } from "@/hooks/use-wallet"
-import { TrendingUp, TrendingDown, DollarSign, Shield, RefreshCw, Wifi, WifiOff, Zap } from "lucide-react"
+import { useTransaction } from "@/hooks/use-transaction"
+import { parseContractError } from "@/utils/errors"
+import { TrendingUp, TrendingDown, DollarSign, Shield, RefreshCw, Wifi, WifiOff, Zap, Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
@@ -21,12 +23,21 @@ export default function DashboardPage() {
   const [xlmPrice, setXlmPrice] = useState<number>(0.35)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [isRepaying, setIsRepaying] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [priceChange, setPriceChange] = useState<"up" | "down" | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Use transaction hook for repay
+  const repayTx = useTransaction({
+    successMessage: "Successfully repaid debt!",
+    onSuccess: async () => {
+      await loadData()
+    }
+  })
 
   const loadData = useCallback(async () => {
     try {
+      setLoadError(null)
       const [data, marketData, price] = await Promise.all([
         stellendContractAPI.getDashboardData(publicKey || ""),
         stellendContractAPI.getMarkets(),
@@ -45,6 +56,11 @@ export default function DashboardPage() {
       setLastUpdated(new Date())
     } catch (error) {
       console.error("Failed to load dashboard data:", error)
+      const errorMessage = parseContractError(error)
+      setLoadError(errorMessage)
+      toast.error("Failed to load data", {
+        description: errorMessage
+      })
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -71,22 +87,42 @@ export default function DashboardPage() {
       return
     }
 
-    setIsRepaying(true)
-    try {
-      await stellendContractAPI.repay(publicKey, amount, signTx)
-      toast.success(`Successfully repaid ${amount} USDC`)
-      await loadData() // Refresh to show updated health factor
-    } catch (error: any) {
-      toast.error(error.message || "Failed to repay")
-    } finally {
-      setIsRepaying(false)
-    }
+    await repayTx.execute(() =>
+      stellendContractAPI.repay(publicKey, amount, signTx)
+    )
   }
 
-  if (loading || !dashboardData) {
+  if (loading) {
     return (
       <div className="p-8">
-        <div className="text-center text-muted-foreground">Loading on-chain data...</div>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading on-chain data...
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError && !dashboardData) {
+    return (
+      <div className="p-8">
+        <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <p>Failed to load dashboard data</p>
+          <p className="text-sm">{loadError}</p>
+          <Button onClick={handleRefresh} variant="outline">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!dashboardData) {
+    return (
+      <div className="p-8">
+        <div className="text-center text-muted-foreground">No data available</div>
       </div>
     )
   }
@@ -252,7 +288,7 @@ export default function DashboardPage() {
           borrowedValue={dashboardData.userDebt_sUSDC}
           xlmPrice={xlmPrice}
           onRepay={isConnected ? handleRepay : undefined}
-          isRepaying={isRepaying}
+          isRepaying={repayTx.isLoading}
         />
       </div>
 

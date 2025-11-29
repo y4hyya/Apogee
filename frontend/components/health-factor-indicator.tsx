@@ -215,19 +215,29 @@ export function HealthFactorIndicator({
                   value={repayAmount}
                   onChange={(e) => setRepayAmount(e.target.value)}
                   className="flex-1"
+                  disabled={isRepaying}
                 />
                 <Button 
                   onClick={handleQuickRepay}
                   disabled={isRepaying || !repayAmount}
                   variant="destructive"
+                  className="min-w-[100px]"
                 >
                   {isRepaying ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Repaying...
+                    </>
                   ) : (
                     "Repay"
                   )}
                 </Button>
               </div>
+              {isRepaying && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Please confirm the transaction in your wallet...
+                </p>
+              )}
               <Button 
                 variant="ghost" 
                 size="sm" 
