@@ -1,4 +1,4 @@
-import { Contract } from '@soroban/client';
+import { Contract } from '@stellar/stellar-sdk';
 
 /**
  * Price Oracle Client

@@ -54,7 +54,13 @@ fn setup_test_env() -> (Env, Address, Address, Address, Address, Address, Addres
     let pool_client = LendingPoolClient::new(&env, &pool_id);
 
     // Initialize pool with all required addresses
-    pool_client.initialize(&admin, &oracle, &interest_rate_model, &xlm_token, &usdc_token);
+    pool_client.initialize(
+        &admin,
+        &oracle,
+        &interest_rate_model,
+        &xlm_token,
+        &usdc_token,
+    );
 
     // Mint tokens to pool for liquidity
     usdc_admin_client.mint(&pool_id, &1_000_000_000_000); // 100,000 USDC in pool
@@ -76,7 +82,13 @@ fn test_initialize() {
     let contract_id = env.register_contract(None, LendingPool);
     let client = LendingPoolClient::new(&env, &contract_id);
 
-    client.initialize(&admin, &oracle, &interest_rate_model, &xlm_token, &usdc_token);
+    client.initialize(
+        &admin,
+        &oracle,
+        &interest_rate_model,
+        &xlm_token,
+        &usdc_token,
+    );
 
     // Check markets are initialized
     let xlm_ltv = client.get_ltv_ratio(&symbol_short!("XLM"));
@@ -104,8 +116,20 @@ fn test_initialize_twice() {
     let contract_id = env.register_contract(None, LendingPool);
     let client = LendingPoolClient::new(&env, &contract_id);
 
-    client.initialize(&admin, &oracle, &interest_rate_model, &xlm_token, &usdc_token);
-    client.initialize(&admin, &oracle, &interest_rate_model, &xlm_token, &usdc_token); // Should panic
+    client.initialize(
+        &admin,
+        &oracle,
+        &interest_rate_model,
+        &xlm_token,
+        &usdc_token,
+    );
+    client.initialize(
+        &admin,
+        &oracle,
+        &interest_rate_model,
+        &xlm_token,
+        &usdc_token,
+    ); // Should panic
 }
 
 #[test]
@@ -393,14 +417,14 @@ fn test_borrow_rate_with_utilization() {
     client.borrow(&user, &symbol_short!("USDC"), &200_000_000); // 20 USDC (20% util)
 
     let market_info = client.get_market_info(&symbol_short!("USDC"));
-    
+
     // Utilization should be 20% (2_000_000 scaled)
     assert_eq!(market_info.utilization_rate, 2_000_000);
-    
+
     // Borrow rate at 20% utilization:
     // rate = 0% + (20% / 80%) * 4% = 1%
     assert_eq!(market_info.borrow_rate, 100_000); // 1%
-    
+
     // Supply rate = borrow_rate * utilization * (1 - reserve_factor)
     // = 1% * 20% * 90% = 0.18%
     assert!(market_info.supply_rate > 0);
@@ -410,7 +434,7 @@ fn test_borrow_rate_with_utilization() {
 fn test_interest_accrual() {
     // This test verifies that the interest accrual mechanism is set up correctly
     // by checking that the borrow index increases when time passes
-    
+
     let env = Env::default();
     env.mock_all_auths();
 
@@ -444,7 +468,13 @@ fn test_interest_accrual() {
     // Register and initialize pool
     let pool_id = env.register_contract(None, LendingPool);
     let client = LendingPoolClient::new(&env, &pool_id);
-    client.initialize(&admin, &oracle, &interest_rate_model, &xlm_token, &usdc_token);
+    client.initialize(
+        &admin,
+        &oracle,
+        &interest_rate_model,
+        &xlm_token,
+        &usdc_token,
+    );
     usdc_admin_client.mint(&pool_id, &1_000_000_000_000);
 
     // Setup: supply and borrow
@@ -472,12 +502,21 @@ fn test_interest_accrual() {
 
     // Check that borrow index increased (interest accrued)
     let new_borrow_index = client.get_borrow_index(&symbol_short!("USDC"));
-    assert!(new_borrow_index > initial_borrow_index, "Borrow index should increase with time");
+    assert!(
+        new_borrow_index > initial_borrow_index,
+        "Borrow index should increase with time"
+    );
 
     // Get market info to verify rates are calculated
     let market_info = client.get_market_info(&symbol_short!("USDC"));
-    assert!(market_info.borrow_rate > 0, "Borrow rate should be positive");
-    assert!(market_info.utilization_rate > 0, "Utilization should be positive");
+    assert!(
+        market_info.borrow_rate > 0,
+        "Borrow rate should be positive"
+    );
+    assert!(
+        market_info.utilization_rate > 0,
+        "Utilization should be positive"
+    );
 }
 
 #[test]
@@ -496,7 +535,7 @@ fn test_market_info_includes_rates() {
     // Borrow rate = 0% + (80%/80%) * 4% = 4%
     assert_eq!(market_info.utilization_rate, 8_000_000); // 80%
     assert_eq!(market_info.borrow_rate, 400_000); // 4%
-    
+
     // Supply rate = 4% * 80% * 90% = 2.88%
     assert!(market_info.supply_rate > 0);
     assert!(market_info.supply_rate < market_info.borrow_rate);
@@ -558,7 +597,7 @@ fn test_liquidate_function_exists() {
     // This test verifies that the liquidation function is properly implemented
     // In a real scenario, an underwater position would be created by price drops
     // For this test, we just verify the function signature and basic structure
-    
+
     let (env, pool_id, _admin, user, _oracle, _xlm_token, _usdc_token) = setup_test_env();
     let client = LendingPoolClient::new(&env, &pool_id);
 
@@ -569,11 +608,11 @@ fn test_liquidate_function_exists() {
     // Check health factor (no debt = infinite HF)
     let hf = client.get_health_factor(&user);
     assert_eq!(hf, 999 * 10_000_000); // No debt = infinite HF
-    
+
     // Verify liquidation threshold is set correctly
     let xlm_liq_threshold = client.get_liquidation_threshold(&symbol_short!("XLM"));
     assert_eq!(xlm_liq_threshold, 8_000_000); // 80%
-    
+
     // Note: To actually test liquidation, we would need to:
     // 1. Deploy a real price oracle contract
     // 2. Update the oracle to crash XLM price (e.g., $0.30 -> $0.15)
@@ -587,24 +626,23 @@ fn test_liquidation_constants() {
     // This test verifies that liquidation constants are properly defined
     // CLOSE_FACTOR = 50% (can liquidate up to half of borrower's debt)
     // LIQUIDATION_BONUS = 5% (liquidator gets 5% extra collateral)
-    
+
     let (env, pool_id, _admin, user, _oracle, _xlm_token, _usdc_token) = setup_test_env();
     let client = LendingPoolClient::new(&env, &pool_id);
 
     // Create a position to verify liquidation threshold is set
     client.deposit_collateral(&user, &symbol_short!("XLM"), &10_000_000_000); // 1000 XLM
-    
+
     // Check liquidation threshold exists
     let xlm_liq_threshold = client.get_liquidation_threshold(&symbol_short!("XLM"));
     assert_eq!(xlm_liq_threshold, 8_000_000); // 80%
-    
+
     let usdc_liq_threshold = client.get_liquidation_threshold(&symbol_short!("USDC"));
     assert_eq!(usdc_liq_threshold, 8_500_000); // 85%
-    
+
     // Note: To test actual liquidation behavior, we would need:
     // 1. A deployed price oracle
     // 2. Ability to manipulate prices (crash mode)
     // 3. Create an underwater position
     // 4. Call liquidate() and verify collateral transfer + bonus
 }
-

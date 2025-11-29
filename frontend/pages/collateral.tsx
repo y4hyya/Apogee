@@ -1,40 +1,45 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { HealthFactorIndicator } from "@/components/health-factor-indicator"
-import { mockContractAPI } from "@/services/mock-contract-api"
-import { Shield, ArrowDown, ArrowUp, AlertTriangle } from "lucide-react"
+import { stellendContractAPI, type DashboardData } from "@/services/soroban-service"
+import { useWallet } from "@/hooks/use-wallet"
+import { Shield, ArrowDown, ArrowUp, AlertTriangle, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 export default function CollateralPage() {
-  const [dashboardData, setDashboardData] = useState<any>(null)
-  const [walletBalances, setWalletBalances] = useState<any>(null)
+  const { publicKey, isConnected, signTx } = useWallet()
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
+  const [walletBalances, setWalletBalances] = useState<{ sXLM: number; sUSDC: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [depositAmount, setDepositAmount] = useState("")
   const [withdrawAmount, setWithdrawAmount] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [dashboard, balances] = await Promise.all([
-          mockContractAPI.getDashboardData(),
-          mockContractAPI.getWalletBalances(),
-        ])
-        setDashboardData(dashboard)
-        setWalletBalances(balances)
-      } catch (error) {
-        console.error("Failed to load data:", error)
-      } finally {
-        setLoading(false)
-      }
+  const loadData = useCallback(async () => {
+    try {
+      const [dashboard, balances] = await Promise.all([
+        stellendContractAPI.getDashboardData(publicKey || ""),
+        stellendContractAPI.getWalletBalances(publicKey || ""),
+      ])
+      setDashboardData(dashboard)
+      setWalletBalances(balances)
+    } catch (error) {
+      console.error("Failed to load data:", error)
+    } finally {
+      setLoading(false)
     }
-    loadData()
-  }, [])
+  }, [publicKey])
+
+  useEffect(() => {
+    if (isConnected) {
+      loadData()
+    }
+  }, [isConnected, loadData])
 
   const handleDeposit = async () => {
     const amount = parseFloat(depositAmount)
@@ -43,18 +48,17 @@ export default function CollateralPage() {
       return
     }
 
+    if (!publicKey) {
+      toast.error("Wallet not connected")
+      return
+    }
+
     setIsProcessing(true)
     try {
-      await mockContractAPI.depositCollateral(amount)
-      toast.success(`Successfully deposited ${amount} sXLM as collateral`)
+      await stellendContractAPI.depositCollateral(publicKey, amount, signTx)
+      toast.success(`Successfully deposited ${amount} XLM as collateral`)
       setDepositAmount("")
-      // Reload data
-      const [dashboard, balances] = await Promise.all([
-        mockContractAPI.getDashboardData(),
-        mockContractAPI.getWalletBalances(),
-      ])
-      setDashboardData(dashboard)
-      setWalletBalances(balances)
+      await loadData()
     } catch (error: any) {
       toast.error(error.message || "Failed to deposit collateral")
     } finally {
@@ -69,18 +73,17 @@ export default function CollateralPage() {
       return
     }
 
+    if (!publicKey) {
+      toast.error("Wallet not connected")
+      return
+    }
+
     setIsProcessing(true)
     try {
-      await mockContractAPI.withdrawCollateral(amount)
-      toast.success(`Successfully withdrew ${amount} sXLM from collateral`)
+      await stellendContractAPI.withdrawCollateral(publicKey, amount, signTx)
+      toast.success(`Successfully withdrew ${amount} XLM from collateral`)
       setWithdrawAmount("")
-      // Reload data
-      const [dashboard, balances] = await Promise.all([
-        mockContractAPI.getDashboardData(),
-        mockContractAPI.getWalletBalances(),
-      ])
-      setDashboardData(dashboard)
-      setWalletBalances(balances)
+      await loadData()
     } catch (error: any) {
       toast.error(error.message || "Failed to withdraw collateral")
     } finally {
@@ -91,7 +94,10 @@ export default function CollateralPage() {
   if (loading || !dashboardData || !walletBalances) {
     return (
       <div className="p-8">
-        <div className="text-center text-muted-foreground">Loading...</div>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading on-chain data...
+        </div>
       </div>
     )
   }
@@ -118,24 +124,32 @@ export default function CollateralPage() {
               <ArrowDown className="w-5 h-5 text-green-500" />
               Deposit Collateral
             </CardTitle>
-            <CardDescription>Add sXLM to your collateral to increase your borrowing capacity</CardDescription>
+            <CardDescription>Add XLM to your collateral to increase your borrowing capacity</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="deposit-amount">Amount (sXLM)</Label>
+              <Label htmlFor="deposit-amount">Amount (XLM)</Label>
               <Input
                 id="deposit-amount"
                 type="number"
                 placeholder="0.00"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
+                disabled={isProcessing}
               />
               <p className="text-sm text-muted-foreground">
-                Wallet Balance: {walletBalances.sXLM.toLocaleString()} sXLM
+                Wallet Balance: {walletBalances.sXLM.toLocaleString()} XLM
               </p>
             </div>
-            <Button onClick={handleDeposit} disabled={isProcessing} className="w-full">
-              {isProcessing ? "Processing..." : "Deposit Collateral"}
+            <Button onClick={handleDeposit} disabled={isProcessing || !isConnected} className="w-full">
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Signing Transaction...
+                </>
+              ) : (
+                "Deposit Collateral"
+              )}
             </Button>
             <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <div className="flex items-start gap-2">
@@ -143,7 +157,7 @@ export default function CollateralPage() {
                 <div className="text-sm">
                   <p className="font-semibold mb-1">Current Collateral</p>
                   <p className="text-muted-foreground">
-                    {dashboardData.userCollateral_sXLM.toLocaleString()} sXLM (${dashboardData.userCollateral_USD.toLocaleString()})
+                    {dashboardData.userCollateral_sXLM.toLocaleString()} XLM (${dashboardData.userCollateral_USD.toLocaleString()})
                   </p>
                 </div>
               </div>
@@ -158,24 +172,32 @@ export default function CollateralPage() {
               <ArrowUp className="w-5 h-5 text-orange-500" />
               Withdraw Collateral
             </CardTitle>
-            <CardDescription>Remove sXLM from your collateral (may affect health factor)</CardDescription>
+            <CardDescription>Remove XLM from your collateral (may affect health factor)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="withdraw-amount">Amount (sXLM)</Label>
+              <Label htmlFor="withdraw-amount">Amount (XLM)</Label>
               <Input
                 id="withdraw-amount"
                 type="number"
                 placeholder="0.00"
                 value={withdrawAmount}
                 onChange={(e) => setWithdrawAmount(e.target.value)}
+                disabled={isProcessing}
               />
               <p className="text-sm text-muted-foreground">
-                Available: {dashboardData.userCollateral_sXLM.toLocaleString()} sXLM
+                Available: {dashboardData.userCollateral_sXLM.toLocaleString()} XLM
               </p>
             </div>
-            <Button onClick={handleWithdraw} disabled={isProcessing} variant="outline" className="w-full">
-              {isProcessing ? "Processing..." : "Withdraw Collateral"}
+            <Button onClick={handleWithdraw} disabled={isProcessing || !isConnected} variant="outline" className="w-full">
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Signing Transaction...
+                </>
+              ) : (
+                "Withdraw Collateral"
+              )}
             </Button>
             <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
               <div className="flex items-start gap-2">
@@ -203,10 +225,9 @@ export default function CollateralPage() {
           </p>
           <p>• Your health factor must stay above 1.0 to avoid liquidation.</p>
           <p>• Withdrawing collateral reduces your borrowing capacity and may affect your health factor.</p>
-          <p>• Collateral value is calculated based on current market prices.</p>
+          <p>• Collateral value is calculated based on current on-chain oracle prices.</p>
         </CardContent>
       </Card>
     </div>
   )
 }
-

@@ -1,0 +1,16 @@
+{
+  "devFiles": [],
+  "ampDevFiles": [],
+  "polyfillFiles": [],
+  "lowPriorityFiles": [],
+  "rootMainFiles": [],
+  "pages": {
+    "/borrow-repay": [
+      "static/chunks/fe2c95071b298c65.js",
+      "static/chunks/f9a176761490ee1c.js",
+      "static/chunks/eeeb121ed9dc91dd.js",
+      "static/chunks/turbopack-e0a42d5450190011.js"
+    ]
+  },
+  "ampFirstPages": []
+}

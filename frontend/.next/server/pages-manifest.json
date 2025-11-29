@@ -1,0 +1,10 @@
+{
+  "/_app": "pages/_app.js",
+  "/_document": "pages/_document.js",
+  "/_error": "pages/_error.js",
+  "/borrow-repay": "pages/borrow-repay.html",
+  "/collateral": "pages/collateral.html",
+  "/dashboard": "pages/dashboard.html",
+  "/lend-withdraw": "pages/lend-withdraw.html",
+  "/404": "pages/404.html"
+}

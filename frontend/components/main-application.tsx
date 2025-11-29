@@ -46,7 +46,7 @@ export function MainApplication() {
         {currentPage === "info" ? (
           <InfoPage onBack={() => setCurrentPage("landing")} />
         ) : (
-          <LandingPage onLearnMore={() => setCurrentPage("info")} />
+          <LandingPage />
         )}
       </>
     )

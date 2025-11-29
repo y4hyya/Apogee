@@ -1,4 +1,4 @@
-import { Contract, Address } from '@soroban/client';
+import { Contract, Address } from '@stellar/stellar-sdk';
 import { LendingPoolInfo } from './types';
 
 /**
