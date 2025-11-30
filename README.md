@@ -1,15 +1,34 @@
-# Stellend - Decentralized Lending Protocol on Stellar
+# Apogee - Decentralized Lending Protocol on Stellar
 
-A peer-to-pool lending protocol built on Stellar Futurenet using Soroban smart contracts. Users can supply assets to earn interest, deposit collateral, and borrow against their collateral.
+<div align="center">
+
+![Apogee Logo](https://img.shields.io/badge/Apogee-DeFi%20Lending-blue?style=for-the-badge&logo=stellar)
+
+**A peer-to-pool lending protocol built on Stellar Testnet using Soroban smart contracts.**
+
+[![Stellar](https://img.shields.io/badge/Stellar-Soroban-7C3AED?style=flat-square&logo=stellar)](https://stellar.org)
+[![Rust](https://img.shields.io/badge/Rust-Smart%20Contracts-orange?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-Frontend-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+
+[Live Demo](#) · [Documentation](#architecture) · [Getting Started](#getting-started)
+
+</div>
+
+---
 
 ## Overview
 
-Stellend enables:
-- **Supply USDC** to the lending pool and earn interest
-- **Deposit XLM** as collateral for borrowing
-- **Borrow USDC** against your XLM collateral (up to 75% LTV)
-- **Monitor health factor** to avoid liquidation
-- **Real-time price feeds** via on-chain oracle
+Apogee enables decentralized lending and borrowing on the Stellar network:
+
+- 🏦 **Supply USDC** to the lending pool and earn interest
+- 💎 **Deposit XLM** as collateral for borrowing
+- 💰 **Borrow USDC** against your XLM collateral (up to 75% LTV)
+- 📊 **Monitor health factor** to avoid liquidation
+- 📈 **Real-time price feeds** via on-chain oracle
+- ⚡ **Automatic liquidation** when positions become unhealthy
+
+---
 
 ## Architecture
 
@@ -25,51 +44,191 @@ Stellend enables:
 ├─────────────────┬──────────────────────┬────────────────────────┤
 │   Lending Pool  │  Interest Rate Model │     Price Oracle       │
 │                 │                      │                        │
-│ • deposit()     │ • get_borrow_rate()  │ • set_price()          │
+│ • supply()      │ • get_borrow_rate()  │ • set_price()          │
 │ • withdraw()    │ • get_supply_rate()  │ • get_price()          │
-│ • borrow()      │                      │ • set_price_chaos()    │
+│ • borrow()      │                      │ • get_xlm_price()      │
 │ • repay()       │                      │                        │
 │ • deposit_      │                      │                        │
 │   collateral()  │                      │                        │
+│ • liquidate()   │                      │                        │
 └─────────────────┴──────────────────────┴────────────────────────┘
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Stellar Futurenet (Soroban)                   │
+│                     Stellar Testnet (Soroban)                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
 ## Tech Stack
 
-- **Smart Contracts**: Rust + Soroban SDK
-- **Frontend**: Next.js, TypeScript, Tailwind CSS
-- **Wallet**: Freighter Wallet integration
-- **Scripts**: TypeScript (price keeper, deployment)
-- **Network**: Stellar Futurenet
+| Layer | Technology |
+|-------|------------|
+| **Smart Contracts** | Rust + Soroban SDK v21 |
+| **Frontend** | Next.js 14, TypeScript, Tailwind CSS, shadcn/ui |
+| **Wallet** | Freighter Wallet integration |
+| **Scripts** | TypeScript (deployment, price keeper) |
+| **Network** | Stellar Testnet |
+
+---
 
 ## Project Structure
 
 ```
-Stellend/
+Apogee/
 ├── contracts/                    # Soroban smart contracts
 │   ├── Cargo.toml               # Workspace configuration
 │   ├── pool/                    # Main lending pool contract
-│   │   └── src/lib.rs          # Deposits, borrows, collateral
+│   │   └── src/lib.rs          # Deposits, borrows, collateral, liquidation
 │   ├── interest_rate_model/     # Interest rate calculations
 │   │   └── src/lib.rs          # Kinked rate model
 │   └── price_oracle/            # On-chain price storage
 │       └── src/lib.rs          # XLM/USD, USDC/USD prices
 ├── scripts/                     # TypeScript utility scripts
+│   ├── deploy_all.ts           # One-click deployment
 │   ├── update_price.ts         # Oracle price keeper
-│   └── package.json
+│   ├── seed_pool.ts            # Pool liquidity seeding
+│   ├── fund_user.ts            # Test user funding
+│   └── deployment.json         # Deployed contract addresses
 ├── frontend/                    # Next.js web application
-│   ├── app/                    # App router pages
+│   ├── app/                    # App router
 │   ├── components/             # React components
 │   ├── pages/                  # Page components
-│   └── services/               # API services
-├── sdk/                        # TypeScript SDK (optional)
+│   ├── services/               # Soroban API services
+│   └── context/                # Wallet context
 └── docs/                       # Documentation
 ```
+
+---
+
+## Health Factor
+
+The **Health Factor (HF)** is the most critical metric in the protocol. It determines the safety of a borrowing position and whether it can be liquidated.
+
+### Formula
+
+```
+                    Collateral Value (USD) × Liquidation Threshold
+Health Factor = ─────────────────────────────────────────────────────
+                              Total Debt Value (USD)
+```
+
+### Detailed Calculation
+
+```
+HF = (Σ Collateral_i × Price_i × LiqThreshold_i) / (Σ Debt_j × Price_j)
+```
+
+Where:
+- `Collateral_i` = Amount of collateral asset i
+- `Price_i` = Oracle price of asset i in USD
+- `LiqThreshold_i` = Liquidation threshold for asset i (80% for XLM)
+- `Debt_j` = Amount of borrowed asset j
+- `Price_j` = Oracle price of asset j in USD
+
+### Example Calculation
+
+**Scenario:** User deposits 1,000 XLM and borrows 150 USDC
+
+| Variable | Value |
+|----------|-------|
+| XLM Collateral | 1,000 XLM |
+| XLM Price | $0.25 |
+| Liquidation Threshold | 80% |
+| USDC Debt | 150 USDC |
+| USDC Price | $1.00 |
+
+```
+Collateral Value = 1,000 × $0.25 = $250
+Weighted Collateral = $250 × 0.80 = $200
+Debt Value = 150 × $1.00 = $150
+
+Health Factor = $200 / $150 = 1.33
+```
+
+### Health Factor Zones
+
+| Health Factor | Status | Color | Action |
+|---------------|--------|-------|--------|
+| **HF > 1.5** | ✅ Safe | 🟢 Green | Position is healthy |
+| **1.0 < HF ≤ 1.5** | ⚠️ Risky | 🟡 Yellow | Consider adding collateral or repaying |
+| **HF ≤ 1.0** | 🚨 Liquidatable | 🔴 Red | Position can be liquidated |
+
+### What Happens During Liquidation?
+
+When Health Factor drops below 1.0:
+
+1. **Anyone** can call the `liquidate()` function
+2. Liquidator repays up to **50%** of the borrower's debt
+3. Liquidator receives equivalent collateral + **5% bonus**
+4. Borrower's debt is reduced, collateral is seized
+
+```
+Collateral Seized = (Debt Repaid × Debt Price × 1.05) / Collateral Price
+```
+
+### Price Impact on Health Factor
+
+If XLM price drops from $0.25 to $0.01:
+
+```
+New Collateral Value = 1,000 × $0.01 = $10
+New Weighted Collateral = $10 × 0.80 = $8
+Debt Value = 150 × $1.00 = $150
+
+New Health Factor = $8 / $150 = 0.053 ❌ LIQUIDATABLE!
+```
+
+---
+
+## Interest Rate Model
+
+The protocol uses a **kinked interest rate model** that incentivizes optimal pool utilization:
+
+<img width="1042" height="576" alt="Interest Rate Model" src="https://github.com/user-attachments/assets/01cba5b3-a5ef-412a-b75b-a33a0244fd65" />
+
+### Formula
+
+```
+If utilization ≤ 80% (Optimal):
+  Borrow Rate = Base Rate + (Utilization / Optimal) × Slope₁
+  Borrow Rate = 0% + (U / 80%) × 4%
+
+If utilization > 80%:
+  Borrow Rate = Base Rate + Slope₁ + ((Utilization - Optimal) / (100% - Optimal)) × Slope₂
+  Borrow Rate = 4% + ((U - 80%) / 20%) × 75%
+```
+
+### Rate Examples
+
+| Utilization | Borrow APR | Supply APY |
+|-------------|------------|------------|
+| 20% | 1.0% | 0.18% |
+| 50% | 2.5% | 1.13% |
+| 80% | 4.0% | 2.88% |
+| 90% | 41.5% | 33.6% |
+| 100% | 79.0% | 71.1% |
+
+<img width="1980" height="1180" alt="Rate Curve" src="https://github.com/user-attachments/assets/2a94b6ed-8b92-4039-85f4-80f194b286b6" />
+
+---
+
+## Protocol Parameters
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| **LTV Ratio** | 75% | Maximum borrow amount relative to collateral |
+| **Liquidation Threshold** | 80% | Collateral factor for health calculation |
+| **Liquidation Bonus** | 5% | Bonus for liquidators |
+| **Close Factor** | 50% | Max debt repayable per liquidation |
+| **Base Rate** | 0% | Minimum interest rate |
+| **Slope 1** | 4% | Rate increase up to optimal utilization |
+| **Slope 2** | 75% | Rate increase above optimal utilization |
+| **Optimal Utilization** | 80% | Target pool utilization |
+| **Reserve Factor** | 10% | Protocol fee on interest |
+
+---
 
 ## Getting Started
 
@@ -81,350 +240,181 @@ Stellend/
    rustup target add wasm32-unknown-unknown
    ```
 
-2. **Soroban CLI**:
+2. **Stellar CLI**:
    ```bash
-   cargo install --locked soroban-cli
+   cargo install --locked stellar-cli
    ```
 
 3. **Node.js** (v18+):
    ```bash
-   # Using nvm (recommended)
-   nvm install 18
-   nvm use 18
+   nvm install 18 && nvm use 18
    ```
 
-4. **Freighter Wallet** (browser extension):
+4. **Freighter Wallet**:
    - Install from [freighter.app](https://www.freighter.app/)
-   - Switch to Futurenet network
+   - Switch to **Testnet** network
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/y4hyya/Stellend.git
-cd Stellend
+git clone https://github.com/y4hyya/Apogee.git
+cd Apogee
 
-# Install Node.js dependencies
-npm install
+# Install frontend dependencies
+cd frontend && npm install
 
-# Install contract dependencies
-cd contracts
-cargo build
+# Install script dependencies
+cd ../scripts && npm install
+
+# Build contracts
+cd ../contracts && cargo build --target wasm32-unknown-unknown --release
 ```
 
-## Building Contracts
+---
 
-```bash
-cd contracts
-
-# Build all contracts
-cargo build --target wasm32-unknown-unknown --release
-
-# Or build individually
-cargo build -p stellend-pool --target wasm32-unknown-unknown --release
-cargo build -p stellend-interest-rate-model --target wasm32-unknown-unknown --release
-cargo build -p stellend-price-oracle --target wasm32-unknown-unknown --release
-```
-
-The compiled WASM files will be in:
-```
-target/wasm32-unknown-unknown/release/
-├── stellend_pool.wasm
-├── stellend_interest_rate_model.wasm
-└── stellend_price_oracle.wasm
-```
-
-## Testing Contracts
-
-```bash
-cd contracts
-
-# Run all tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run specific contract tests
-cargo test -p stellend-interest-rate-model
-```
-
-## Deploying to Futurenet
+## Deployment
 
 ### Quick Deployment (Recommended)
 
-Use the automated deployment scripts:
-
 ```bash
-# 1. Build contracts
-cd contracts
-cargo build --target wasm32-unknown-unknown --release
+# 1. Generate deployer account
+stellar keys generate deployer-testnet --network testnet
 
-# 2. Generate and fund deployer account
-soroban keys generate deployer --network futurenet
-curl "https://friendbot-futurenet.stellar.org/?addr=$(soroban keys address deployer)"
+# 2. Fund with Friendbot
+curl "https://friendbot.stellar.org/?addr=$(stellar keys address deployer-testnet)"
 
-# 3. Get secret key
-export SECRET_KEY=$(soroban keys show deployer)
-
-# 4. Deploy everything!
-cd ../scripts
-npm install
+# 3. Deploy all contracts
+cd scripts
 npm run deploy-all
 
-# 5. Seed pool with liquidity
+# 4. Seed pool with liquidity
 npm run seed-pool
 
-# 6. Create a test user
+# 5. Create test user
 npm run fund-user -- --new
 ```
 
-This will:
-- Deploy all 3 contracts (Pool, Oracle, Interest Rate Model)
-- Set up XLM and USDC tokens (via Stellar Asset Contract)
-- Initialize all contracts
-- Set initial prices ($0.30 XLM, $1.00 USDC)
-- Save everything to `scripts/deployment.json`
+### Deployed Contracts (Testnet)
 
-### Manual Deployment
-
-For more control, you can deploy contracts manually:
-
-#### 1. Create a Futurenet Account
-
-```bash
-# Generate a new keypair
-soroban keys generate deployer --network futurenet
-
-# Fund it with Friendbot
-curl "https://friendbot-futurenet.stellar.org/?addr=$(soroban keys address deployer)"
-```
-
-#### 2. Deploy Contracts
-
-```bash
-cd contracts
-
-# Deploy Price Oracle
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/stellend_price_oracle.wasm \
-  --source deployer \
-  --network futurenet
-
-# Deploy Interest Rate Model
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/stellend_interest_rate_model.wasm \
-  --source deployer \
-  --network futurenet
-
-# Deploy Lending Pool
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/stellend_pool.wasm \
-  --source deployer \
-  --network futurenet
-```
-
-#### 3. Initialize Contracts
-
-```bash
-# Initialize Price Oracle
-soroban contract invoke \
-  --id <ORACLE_CONTRACT_ID> \
-  --source deployer \
-  --network futurenet \
-  -- \
-  initialize \
-  --admin <ADMIN_ADDRESS>
-
-# Initialize Interest Rate Model (uses default parameters)
-soroban contract invoke \
-  --id <INTEREST_RATE_MODEL_CONTRACT_ID> \
-  --source deployer \
-  --network futurenet \
-  -- \
-  initialize_default
-
-# Initialize Lending Pool
-soroban contract invoke \
-  --id <POOL_CONTRACT_ID> \
-  --source deployer \
-  --network futurenet \
-  -- \
-  initialize \
-  --admin <ADMIN_ADDRESS> \
-  --usdc_token <USDC_TOKEN_ID> \
-  --xlm_token <XLM_TOKEN_ID> \
-  --interest_rate_model <INTEREST_RATE_MODEL_CONTRACT_ID> \
-  --price_oracle <ORACLE_CONTRACT_ID>
-```
-
-#### 4. Set Initial Prices
-
-```bash
-# Set XLM price to $0.30 (3_000_000 with 7 decimals)
-soroban contract invoke \
-  --id <ORACLE_CONTRACT_ID> \
-  --source deployer \
-  --network futurenet \
-  -- \
-  set_price \
-  --asset XLM \
-  --price 3000000
-```
-
-## Seeding the Pool
-
-After deployment, add liquidity to the pool:
-
-```bash
-cd scripts
-
-# This creates a whale account, mints 1M USDC, and supplies 500K to the pool
-npm run seed-pool
-```
-
-## Creating Test Users
-
-Fund demo accounts for testing:
-
-```bash
-# Create a new user with 10K XLM + 10K USDC
-npm run fund-user -- --new
-
-# Fund an existing address
-npm run fund-user -- GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
-# Custom amounts
-npm run fund-user -- --new --xlm 50000 --usdc 25000
-```
-
-## Running the Price Keeper
-
-The price keeper script fetches real-time prices from CoinGecko and updates the oracle.
-
-```bash
-cd scripts
-
-# Install dependencies (if not already done)
-npm install
-
-# Set environment variables (or use deployment.json)
-export SECRET_KEY="your_deployer_secret_key"
-export ORACLE_CONTRACT_ID="your_oracle_contract_id"  # Optional if using deployment.json
-
-# Run price update (normal mode)
-npm run update-price
-
-# Run with chaos mode (50% price drop for testing liquidations)
-npm run update-price:crash
-
-# Use mock prices (no API call)
-npm run update-price:mock
-```
-
-## Deployment Info
-
-After running `npm run deploy-all`, all contract IDs are saved to `scripts/deployment.json`:
+After deployment, contract IDs are saved to `scripts/deployment.json`:
 
 ```json
 {
-  "network": "futurenet",
+  "network": "testnet",
   "contracts": {
-    "pool": "CXXXXXX...",
-    "oracle": "CXXXXXX...",
-    "interestRateModel": "CXXXXXX..."
+    "pool": "CAGYPYXFUV7BXUHLCQB7JCLSVT2GF34NMC2YUZKSNQZAGUQLXMAVZIT2",
+    "oracle": "CARZ56ARJA6KDA46K4AC5JO7MPRZ6TYVCJ277RTMDQZOSSMLZYSMRIYH",
+    "interestRateModel": "CBWCQQK3QHJL2QOIKFIER5FCNIDWVBECKYYH3XH47P2TILCJN2UST33V"
   },
   "tokens": {
-    "xlm": "CXXXXXX...",
-    "usdc": "CXXXXXX...",
-    "usdcIssuer": "GXXXXXX..."
-  },
-  "accounts": {
-    "deployer": "GXXXXXX...",
-    "whale": "GXXXXXX..."
+    "xlm": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "usdc": "CBISMBMV3WSS3CQ2MQYUQK374GTO74JDCL7A344Z5NMST5DLE6LHLMEI"
   }
 }
 ```
 
-Other scripts (`seed-pool`, `fund-user`, `update-price`) will automatically read from this file.
+---
 
 ## Running the Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Start development server
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Protocol Parameters
+### Features
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| LTV Ratio | 75% | Maximum borrow amount relative to collateral |
-| Liquidation Threshold | 80% | Health factor threshold for liquidation |
-| Base Rate | 0% | Minimum interest rate |
-| Slope 1 | 4% | Rate increase up to optimal utilization |
-| Slope 2 | 75% | Rate increase above optimal utilization |
-| Optimal Utilization | 80% | Target pool utilization |
+- 🔗 **Wallet Connection** - Seamless Freighter integration
+- 📊 **Dashboard** - Real-time position monitoring
+- 💰 **Supply/Withdraw** - Earn interest on USDC
+- 💎 **Deposit/Withdraw Collateral** - Manage XLM collateral
+- 💸 **Borrow/Repay** - Borrow USDC against collateral
+- 🎯 **Health Factor Display** - Visual health indicator with color coding
+- 🔴 **Crash/Reset Buttons** - Demo price manipulation (admin only)
 
-## Health Factor
+---
 
-The health factor determines the safety of a borrowing position:
+## Testing Liquidation (Demo)
 
+### Setup
+
+1. **Account 1 (Borrower)**: Deposits 1,000 XLM, borrows 150 USDC
+2. **Account 2 (Admin)**: Controls oracle prices
+
+### Demo Flow
+
+```bash
+# 1. Check initial health factor (~1.33)
+stellar contract invoke --id $POOL --network testnet -- get_health_factor --user $BORROWER
+
+# 2. Crash XLM price to $0.01
+stellar contract invoke --id $ORACLE --source $ADMIN_SECRET --network testnet -- set_price --asset XLM --price 100000
+
+# 3. Check new health factor (~0.05 - liquidatable!)
+stellar contract invoke --id $POOL --network testnet -- get_health_factor --user $BORROWER
+
+# 4. Execute liquidation
+stellar contract invoke --id $POOL --source $ADMIN_SECRET --network testnet -- liquidate \
+  --liquidator $ADMIN --borrower $BORROWER --repay_asset USDC --repay_amount 90000000 --collateral_asset XLM
+
+# 5. Reset price
+stellar contract invoke --id $ORACLE --source $ADMIN_SECRET --network testnet -- set_price --asset XLM --price 2500000
 ```
-Health Factor = (Collateral Value × Liquidation Threshold) / Borrowed Value
-```
 
-- **Health Factor > 1.5**: Safe
-- **Health Factor 1.0 - 1.5**: Risky
-- **Health Factor < 1.0**: Liquidatable
-
-## Interest Rate Model
-
-
-
-<img width="1042" height="576" alt="image" src="https://github.com/user-attachments/assets/01cba5b3-a5ef-412a-b75b-a33a0244fd65" />
-
-
-The protocol uses a kinked interest rate model:
-
-```
-If utilization ≤ 80%:
-  Rate = 0% + (utilization / 80%) × 4%
-
-If utilization > 80%:
-  Rate = 4% + ((utilization - 80%) / 20%) × 75%
-```
-<img width="1980" height="1180" alt="image" src="https://github.com/user-attachments/assets/2a94b6ed-8b92-4039-85f4-80f194b286b6" />
-This incentivizes depositors when utilization is high.
+---
 
 ## Network Configuration
 
 | Network | RPC URL | Passphrase |
 |---------|---------|------------|
+| **Testnet** | https://soroban-testnet.stellar.org | Test SDF Network ; September 2015 |
 | Futurenet | https://rpc-futurenet.stellar.org | Test SDF Future Network ; October 2022 |
-| Testnet | https://soroban-testnet.stellar.org | Test SDF Network ; September 2015 |
 
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+---
 
 ## Security
 
 ⚠️ **This protocol is in development and unaudited.** Do not use with real assets.
 
+### Known Considerations
+
+- Oracle prices are admin-controlled (for demo purposes)
+- No governance mechanism implemented
+- Single-asset collateral support (XLM only)
+
+---
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+---
+
 ## License
 
 MIT License - see [LICENSE](LICENSE)
 
+---
+
 ## Links
 
-- [Stellar Documentation](https://developers.stellar.org/)
-- [Soroban Documentation](https://soroban.stellar.org/docs)
-- [Freighter Wallet](https://www.freighter.app/)
+- 🌐 [Stellar Documentation](https://developers.stellar.org/)
+- 📚 [Soroban Documentation](https://soroban.stellar.org/docs)
+- 🔐 [Freighter Wallet](https://www.freighter.app/)
+- 🐙 [GitHub Repository](https://github.com/y4hyya/Apogee)
+
+---
+
+<div align="center">
+
+**Built with ❤️ on Stellar**
+
+</div>
