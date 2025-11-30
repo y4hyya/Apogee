@@ -132,70 +132,70 @@ export function LandingPage() {
               <span className="ml-2 text-muted-foreground">Loading live data...</span>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card className="glassmorphism border-2 border-primary/30 hover:border-primary/50 transition-all duration-300">
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                      <Lock className="w-6 h-6 text-primary" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="glassmorphism border-2 border-primary/30 hover:border-primary/50 transition-all duration-300">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+                    <Lock className="w-6 h-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase">Total Value Locked</p>
+                      <p className="text-2xl font-bold text-primary">{formatValue(metrics?.tvl || 0)}</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">Total value of all assets in the protocol</p>
+              </CardContent>
+            </Card>
+
+            <Card className="glassmorphism border-2 border-success/30 hover:border-success/50 transition-all duration-300">
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-success/20 to-success/10 flex items-center justify-center">
+                      <TrendingUp className="w-6 h-6 text-success" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Value Locked</p>
-                      <p className="text-2xl font-bold text-primary">{formatValue(metrics?.tvl || 0)}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Total value of all assets in the protocol</p>
-                </CardContent>
-              </Card>
-
-              <Card className="glassmorphism border-2 border-success/30 hover:border-success/50 transition-all duration-300">
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-success/20 to-success/10 flex items-center justify-center">
-                        <TrendingUp className="w-6 h-6 text-success" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase">Total Supplied</p>
-                        <p className="text-2xl font-bold text-success">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Supplied</p>
+                      <p className="text-2xl font-bold text-success">
                           {formatValue(metrics?.totalSupplied || 0)}
-                        </p>
-                      </div>
+                      </p>
                     </div>
-                    <div className="border-t border-border/50 pt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Best APR</span>
+                  </div>
+                  <div className="border-t border-border/50 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Best APR</span>
                         <span className="text-lg font-bold text-success">{(metrics?.bestSupplyAPR || 0).toFixed(2)}%</span>
-                      </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
 
-              <Card className="glassmorphism border-2 border-destructive/30 hover:border-destructive/50 transition-all duration-300">
-                <CardContent className="pt-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center">
-                        <DollarSign className="w-6 h-6 text-destructive" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase">Total Borrowed</p>
-                        <p className="text-2xl font-bold text-destructive">
-                          {formatValue(metrics?.totalBorrowed || 0)}
-                        </p>
-                      </div>
+            <Card className="glassmorphism border-2 border-destructive/30 hover:border-destructive/50 transition-all duration-300">
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center">
+                      <DollarSign className="w-6 h-6 text-destructive" />
                     </div>
-                    <div className="border-t border-border/50 pt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Best APY</span>
-                        <span className="text-lg font-bold text-destructive">{(metrics?.bestBorrowAPY || 0).toFixed(2)}%</span>
-                      </div>
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Borrowed</p>
+                      <p className="text-2xl font-bold text-destructive">
+                          {formatValue(metrics?.totalBorrowed || 0)}
+                      </p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <div className="border-t border-border/50 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Best APY</span>
+                        <span className="text-lg font-bold text-destructive">{(metrics?.bestBorrowAPY || 0).toFixed(2)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
           )}
         </div>
       </section>
@@ -276,8 +276,8 @@ export function LandingPage() {
                     <Loader2 className="w-6 h-6 animate-spin text-accent" />
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                       <span className="text-sm text-muted-foreground">Total Value Locked</span>
                       <span className="text-lg font-bold text-primary">{formatValue(metrics?.tvl || 0)}</span>
                     </div>

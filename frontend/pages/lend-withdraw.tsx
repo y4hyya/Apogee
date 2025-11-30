@@ -21,21 +21,21 @@ export default function LendWithdrawPage() {
   const [withdrawAmount, setWithdrawAmount] = useState("")
 
   const loadData = useCallback(async () => {
-    try {
-      const [dashboard, balances] = await Promise.all([
+      try {
+        const [dashboard, balances] = await Promise.all([
         apogeeContractAPI.getDashboardData(publicKey || ""),
         apogeeContractAPI.getWalletBalances(publicKey || ""),
-      ])
-      setDashboardData(dashboard)
-      setWalletBalances(balances)
-    } catch (error) {
-      console.error("Failed to load data:", error)
+        ])
+        setDashboardData(dashboard)
+        setWalletBalances(balances)
+      } catch (error) {
+        console.error("Failed to load data:", error)
       toast.error("Failed to load data", {
         description: "Could not fetch on-chain data. Please refresh."
       })
-    } finally {
-      setLoading(false)
-    }
+      } finally {
+        setLoading(false)
+      }
   }, [publicKey])
 
   // Transaction hooks with proper success callbacks
