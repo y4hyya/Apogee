@@ -11,7 +11,7 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "StelLend - DeFi Lending Protocol",
+  title: "Apogee - DeFi Lending Protocol",
   description: "Peer-to-pool lending on Stellar/Soroban",
   generator: "v0.app",
 }

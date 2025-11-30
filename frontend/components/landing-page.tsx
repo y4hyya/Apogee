@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { TrendingUp, Shield, Zap, DollarSign, Lock, Users, Loader2 } from "lucide-react"
 import { useWallet } from "@/hooks/use-wallet"
-import { stellendContractAPI } from "@/services/soroban-service"
+import { apogeeContractAPI } from "@/services/soroban-service"
 
 interface PlatformMetrics {
   tvl: number
@@ -32,7 +32,7 @@ export function LandingPage() {
   useEffect(() => {
     async function loadMetrics() {
       try {
-        const markets = await stellendContractAPI.getMarkets()
+        const markets = await apogeeContractAPI.getMarkets()
         
         // Aggregate metrics from all markets
         const totalSupplied = markets.reduce((acc, m) => acc + m.totalSupplied, 0)

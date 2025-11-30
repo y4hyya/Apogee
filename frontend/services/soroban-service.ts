@@ -244,6 +244,60 @@ class SorobanContractService {
     }
   }
 
+  // Set price on oracle (admin only - for demo purposes)
+  async setPrice(
+    asset: "XLM" | "USDC",
+    priceUsd: number,
+    publicKey: string,
+    signTx: (xdr: string) => Promise<string>
+  ): Promise<boolean> {
+    if (!this.oracleContract) {
+      console.error("Oracle contract not configured")
+      return false
+    }
+
+    if (!publicKey) {
+      console.error("Public key required for setPrice")
+      return false
+    }
+
+    try {
+      // Convert price to scaled format (1e7)
+      const scaledPrice = BigInt(Math.floor(priceUsd * 10_000_000))
+
+      const txXdr = await this.buildTransaction(
+        publicKey,
+        this.oracleContract.call(
+          "set_price",
+          nativeToScVal(asset, { type: "symbol" }),
+          nativeToScVal(scaledPrice, { type: "i128" })
+        )
+      )
+
+      if (!txXdr) {
+        console.error("Failed to build set_price transaction")
+        return false
+      }
+
+      const signedXdr = await signTx(txXdr)
+      const txHash = await this.submitTransaction(signedXdr)
+      return txHash.length > 0
+    } catch (error) {
+      console.error("Error setting price:", error)
+      return false
+    }
+  }
+
+  // Crash XLM price to $0.01 (for demo liquidation)
+  async crashPrice(publicKey: string, signTx: (xdr: string) => Promise<string>): Promise<boolean> {
+    return this.setPrice("XLM", 0.01, publicKey, signTx)
+  }
+
+  // Reset XLM price to normal $0.25 (for demo)
+  async resetPrice(publicKey: string, signTx: (xdr: string) => Promise<string>): Promise<boolean> {
+    return this.setPrice("XLM", 0.25, publicKey, signTx)
+  }
+
   // Get user position from pool contract
   async getUserPosition(userAddress: string): Promise<{
     collateral: { xlm: number }
@@ -665,7 +719,7 @@ async function ensurePoolInitialized(): Promise<void> {
 // === API compatible with mock-contract-api ===
 // This allows gradual migration from mock to real
 
-export const stellendContractAPI = {
+export const apogeeContractAPI = {
   getWalletBalances: async (userAddress: string): Promise<WalletBalances> => {
     // Query actual token balances from SAC contracts
     if (!userAddress) {

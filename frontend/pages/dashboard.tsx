@@ -1,17 +1,19 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
+import type { Transaction } from "@/types/dashboard"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { HealthFactorIndicator } from "@/components/health-factor-indicator"
 import { PositionChart } from "@/components/position-chart"
 import { TransactionHistory } from "@/components/transaction-history"
 import { MarketsOverview } from "@/components/markets-overview"
-import { stellendContractAPI, sorobanService, type DashboardData, type MarketData } from "@/services/soroban-service"
-import { generateMockTransactions, generateMockChartData } from "@/services/mock-data-generator"
+import { apogeeContractAPI, sorobanService, type DashboardData, type MarketData } from "@/services/soroban-service"
+import { CONTRACTS } from "@/config/contracts"
+import { generateChartDataFromPosition, fetchUserTransactions } from "@/services/mock-data-generator"
 import { useWallet } from "@/hooks/use-wallet"
 import { useTransaction } from "@/hooks/use-transaction"
 import { parseContractError } from "@/utils/errors"
-import { TrendingUp, TrendingDown, DollarSign, Shield, RefreshCw, Wifi, WifiOff, Zap, Loader2, AlertCircle } from "lucide-react"
+import { TrendingUp, TrendingDown, DollarSign, Shield, RefreshCw, Wifi, WifiOff, Zap, Loader2, AlertCircle, FlameKindling, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
@@ -26,6 +28,10 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [priceChange, setPriceChange] = useState<"up" | "down" | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [crashing, setCrashing] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [chartData, setChartData] = useState<Array<{ date: string; collateral: number; debt: number }>>([])
 
   // Use transaction hook for repay
   const repayTx = useTransaction({
@@ -34,6 +40,66 @@ export default function DashboardPage() {
       await loadData()
     }
   })
+
+  // Crash price handler - sets XLM to $0.01
+  const handleCrashPrice = async () => {
+    if (!signTx || !publicKey) {
+      toast.error("Wallet not connected")
+      return
+    }
+
+    setCrashing(true)
+    try {
+      const success = await sorobanService.crashPrice(publicKey, signTx)
+      if (success) {
+        toast.success("💥 Price crashed to $0.01!", {
+          description: "XLM price has been crashed for demo"
+        })
+        await loadData()
+      } else {
+        toast.error("Failed to crash price", {
+          description: "Only the deployer/admin wallet can change prices"
+        })
+      }
+    } catch (error) {
+      console.error("Crash price error:", error)
+      toast.error("Failed to crash price", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      })
+    } finally {
+      setCrashing(false)
+    }
+  }
+
+  // Reset price handler - sets XLM back to $0.25
+  const handleResetPrice = async () => {
+    if (!signTx || !publicKey) {
+      toast.error("Wallet not connected")
+      return
+    }
+
+    setResetting(true)
+    try {
+      const success = await sorobanService.resetPrice(publicKey, signTx)
+      if (success) {
+        toast.success("✅ Price reset to $0.25!", {
+          description: "XLM price has been restored"
+        })
+        await loadData()
+      } else {
+        toast.error("Failed to reset price", {
+          description: "Only the deployer/admin wallet can change prices"
+        })
+      }
+    } catch (error) {
+      console.error("Reset price error:", error)
+      toast.error("Failed to reset price", {
+        description: error instanceof Error ? error.message : "Unknown error"
+      })
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const loadData = useCallback(async () => {
     // Wait for wallet to be connected
@@ -45,8 +111,8 @@ export default function DashboardPage() {
     try {
       setLoadError(null)
       const [data, marketData, price] = await Promise.all([
-        stellendContractAPI.getDashboardData(publicKey),
-        stellendContractAPI.getMarkets(),
+        apogeeContractAPI.getDashboardData(publicKey),
+        apogeeContractAPI.getMarkets(),
         sorobanService.getPrice("XLM"),
       ])
       
@@ -60,6 +126,16 @@ export default function DashboardPage() {
       setMarkets(marketData)
       setXlmPrice(price)
       setLastUpdated(new Date())
+      
+      // Generate chart data based on current position
+      const collateralValue = data.userCollateral_USD
+      const debtValue = data.userDebt_sUSDC
+      const generatedChartData = generateChartDataFromPosition(collateralValue, debtValue)
+      setChartData(generatedChartData)
+      
+      // Fetch real transaction history
+      const userTransactions = await fetchUserTransactions(publicKey, CONTRACTS.POOL)
+      setTransactions(userTransactions)
     } catch (error) {
       console.error("Failed to load dashboard data:", error)
       const errorMessage = parseContractError(error)
@@ -94,7 +170,7 @@ export default function DashboardPage() {
     }
 
     await repayTx.execute(() =>
-      stellendContractAPI.repay(publicKey, amount, signTx)
+      apogeeContractAPI.repay(publicKey, amount, signTx)
     )
   }
 
@@ -160,9 +236,6 @@ export default function DashboardPage() {
     )
   }
 
-  const transactions = generateMockTransactions()
-  const chartData = generateMockChartData()
-
   // Convert markets to the format expected by MarketsOverview
   const marketsForOverview = markets.map(m => ({
     asset: m.asset,
@@ -221,6 +294,39 @@ export default function DashboardPage() {
             <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </Button>
+
+          {/* Demo Controls - Crash & Reset Price */}
+          <div className="flex items-center gap-2 ml-4 pl-4 border-l border-border">
+            <span className="text-xs text-muted-foreground">Demo:</span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCrashPrice}
+              disabled={crashing || resetting}
+              className="flex items-center gap-2"
+            >
+              {crashing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FlameKindling className="w-4 h-4" />
+              )}
+              Crash
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetPrice}
+              disabled={crashing || resetting}
+              className="flex items-center gap-2 border-green-500/50 text-green-500 hover:bg-green-500/10"
+            >
+              {resetting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RotateCcw className="w-4 h-4" />
+              )}
+              Reset
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -348,9 +454,13 @@ export default function DashboardPage() {
       )}
 
       {/* Charts and Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <PositionChart data={chartData} />
-        <MarketsOverview markets={marketsForOverview} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
+        <div className="min-w-0">
+          <PositionChart data={chartData} />
+        </div>
+        <div className="min-w-0">
+          <MarketsOverview markets={marketsForOverview} />
+        </div>
       </div>
 
       {/* Transaction History */}

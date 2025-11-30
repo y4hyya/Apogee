@@ -69,7 +69,7 @@ export function MainApplication() {
       {/* Sidebar */}
       <div className="w-64 glass-panel border-r border-white/10 p-6">
         <div className="mb-8">
-          <h2 className="text-2xl font-bold gradient-text">StelLend</h2>
+          <h2 className="text-2xl font-bold gradient-text">Apogee</h2>
         </div>
         <nav className="space-y-2">
           {menuItems.map((item) => {

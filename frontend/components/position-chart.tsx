@@ -14,12 +14,12 @@ interface PositionChartProps {
 
 export function PositionChart({ data }: PositionChartProps) {
   return (
-    <Card className="glass-panel border-white/10">
+    <Card className="glass-panel border-white/10 overflow-hidden">
       <CardHeader>
         <CardTitle>Position History</CardTitle>
         <CardDescription>Last 30 days collateral and debt values</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-hidden">
         <ChartContainer
           config={{
             collateral: {
@@ -31,7 +31,7 @@ export function PositionChart({ data }: PositionChartProps) {
               color: "hsl(var(--chart-2))",
             },
           }}
-          className="h-[300px]"
+          className="h-[300px] w-full"
         >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data}>

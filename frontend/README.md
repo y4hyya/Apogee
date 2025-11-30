@@ -159,16 +159,16 @@ The frontend interacts with these Soroban contracts:
 ### API Usage
 
 ```typescript
-import { stellendContractAPI } from "@/services/soroban-service"
+import { apogeeContractAPI } from "@/services/soroban-service"
 
 // Read operations (no signing needed)
-const dashboardData = await stellendContractAPI.getDashboardData(publicKey)
-const markets = await stellendContractAPI.getMarkets()
+const dashboardData = await apogeeContractAPI.getDashboardData(publicKey)
+const markets = await apogeeContractAPI.getMarkets()
 
 // Write operations (requires wallet signing)
-await stellendContractAPI.depositCollateral(publicKey, amount, signTx)
-await stellendContractAPI.borrow(publicKey, amount, signTx)
-await stellendContractAPI.repay(publicKey, amount, signTx)
+await apogeeContractAPI.depositCollateral(publicKey, amount, signTx)
+await apogeeContractAPI.borrow(publicKey, amount, signTx)
+await apogeeContractAPI.repay(publicKey, amount, signTx)
 ```
 
 ## Tech Stack

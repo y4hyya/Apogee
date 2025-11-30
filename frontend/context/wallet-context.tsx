@@ -139,18 +139,38 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      console.log("Signing transaction with Freighter...")
+      console.log("Network:", NETWORK.networkPassphrase)
+      console.log("Account:", publicKey)
+      
       const signedXdr = await signTransaction(xdr, {
         networkPassphrase: NETWORK.networkPassphrase,
         accountToSign: publicKey,
       })
 
+      console.log("Freighter response:", signedXdr ? "Signed successfully" : "No response")
+
       if (!signedXdr) {
-        throw new Error("Failed to sign transaction")
+        throw new Error("Freighter returned empty response - transaction may have been rejected")
       }
 
       return signedXdr
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to sign transaction"
+    } catch (err: any) {
+      console.error("Sign transaction error:", err)
+      
+      // Better error messages
+      let message = "Failed to sign transaction"
+      
+      if (err.message?.includes("User declined")) {
+        message = "Transaction rejected by user"
+      } else if (err.message?.includes("Wallet is locked")) {
+        message = "Please unlock Freighter wallet"
+      } else if (err.message?.includes("network")) {
+        message = "Network mismatch - ensure Freighter is on Testnet"
+      } else if (err instanceof Error) {
+        message = err.message
+      }
+      
       throw new Error(message)
     }
   }, [isConnected, publicKey])

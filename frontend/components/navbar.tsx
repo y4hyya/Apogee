@@ -49,7 +49,7 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
           </div>
           <div className="flex flex-col">
             <span className="text-lg font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
-              StelLend
+              Apogee
             </span>
             <span className="text-xs text-muted-foreground">Peer-to-Pool Lending</span>
           </div>
@@ -121,7 +121,7 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
       {/* Network Warning Banner */}
       {isConnected && network && network !== "TESTNET" && (
         <div className="bg-yellow-500/10 border-t border-yellow-500/20 px-4 py-2 text-center text-sm text-yellow-400">
-          ⚠️ Please switch to Testnet in Freighter to use Stellend
+          ⚠️ Please switch to Testnet in Freighter to use Apogee
         </div>
       )}
     </nav>

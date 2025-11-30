@@ -30,19 +30,19 @@ export function InfoPage({ onBack }: InfoPageProps) {
               </div>
             </div>
             <h1 className="text-4xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
-              Welcome to StelLend
+              Welcome to Apogee
             </h1>
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
               A decentralized peer-to-pool lending protocol built on Stellar and powered by Soroban smart contracts
             </p>
           </div>
 
-          {/* What is StelLend */}
+          {/* What is Apogee */}
           <div className="p-8 rounded-2xl bg-gradient-to-br from-card/50 to-card/30 backdrop-blur-sm border border-border/50">
-            <h2 className="text-2xl font-bold mb-4">What is StelLend?</h2>
+            <h2 className="text-2xl font-bold mb-4">What is Apogee?</h2>
             <p className="text-muted-foreground leading-relaxed">
-              StelLend is a decentralized lending protocol that allows users to supply assets to earn interest and
-              borrow assets by providing collateral. Built on the Stellar blockchain, StelLend leverages Soroban smart
+              Apogee is a decentralized lending protocol that allows users to supply assets to earn interest and
+              borrow assets by providing collateral. Built on the Stellar blockchain, Apogee leverages Soroban smart
               contracts to provide a secure, transparent, and efficient lending experience.
             </p>
           </div>

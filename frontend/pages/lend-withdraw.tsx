@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { stellendContractAPI, type DashboardData } from "@/services/soroban-service"
+import { apogeeContractAPI, type DashboardData } from "@/services/soroban-service"
 import { useWallet } from "@/hooks/use-wallet"
 import { useTransaction, getButtonText } from "@/hooks/use-transaction"
 import { OPERATION_ERRORS } from "@/utils/errors"
@@ -23,8 +23,8 @@ export default function LendWithdrawPage() {
   const loadData = useCallback(async () => {
     try {
       const [dashboard, balances] = await Promise.all([
-        stellendContractAPI.getDashboardData(publicKey || ""),
-        stellendContractAPI.getWalletBalances(publicKey || ""),
+        apogeeContractAPI.getDashboardData(publicKey || ""),
+        apogeeContractAPI.getWalletBalances(publicKey || ""),
       ])
       setDashboardData(dashboard)
       setWalletBalances(balances)
@@ -101,7 +101,7 @@ export default function LendWithdrawPage() {
     }
 
     await supplyTx.execute(() => 
-      stellendContractAPI.supplyLiquidity(publicKey, amount, signTx)
+      apogeeContractAPI.supplyLiquidity(publicKey, amount, signTx)
     )
   }
 
@@ -119,7 +119,7 @@ export default function LendWithdrawPage() {
     }
 
     await withdrawTx.execute(() =>
-      stellendContractAPI.withdrawLiquidity(publicKey, amount, signTx)
+      apogeeContractAPI.withdrawLiquidity(publicKey, amount, signTx)
     )
   }
 

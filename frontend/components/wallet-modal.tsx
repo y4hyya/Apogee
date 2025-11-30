@@ -127,7 +127,7 @@ export function WalletModal({ isOpen, onClose }: WalletModalProps) {
               </li>
               <li className="flex items-start gap-2">
                 <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/20 text-primary text-xs flex items-center justify-center">3</span>
-                <span>Start using StelLend!</span>
+                <span>Start using Apogee!</span>
               </li>
             </ol>
           </div>

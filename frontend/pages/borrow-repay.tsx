@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { HealthFactorIndicator } from "@/components/health-factor-indicator"
-import { stellendContractAPI, sorobanService, type DashboardData } from "@/services/soroban-service"
+import { apogeeContractAPI, sorobanService, type DashboardData } from "@/services/soroban-service"
 import { useWallet } from "@/hooks/use-wallet"
 import { useTransaction, getButtonText } from "@/hooks/use-transaction"
 import { OPERATION_ERRORS } from "@/utils/errors"
@@ -25,8 +25,8 @@ export default function BorrowRepayPage() {
   const loadData = useCallback(async () => {
     try {
       const [dashboard, balances, price] = await Promise.all([
-        stellendContractAPI.getDashboardData(publicKey || ""),
-        stellendContractAPI.getWalletBalances(publicKey || ""),
+        apogeeContractAPI.getDashboardData(publicKey || ""),
+        apogeeContractAPI.getWalletBalances(publicKey || ""),
         sorobanService.getPrice("XLM"),
       ])
       setDashboardData(dashboard)
@@ -136,7 +136,7 @@ export default function BorrowRepayPage() {
     }
 
     await borrowTx.execute(() =>
-      stellendContractAPI.borrow(publicKey, amount, signTx)
+      apogeeContractAPI.borrow(publicKey, amount, signTx)
     )
   }
 
@@ -154,7 +154,7 @@ export default function BorrowRepayPage() {
     }
 
     await repayTx.execute(() =>
-      stellendContractAPI.repay(publicKey, amount, signTx)
+      apogeeContractAPI.repay(publicKey, amount, signTx)
     )
   }
 
