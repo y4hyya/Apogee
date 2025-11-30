@@ -36,10 +36,16 @@ export default function DashboardPage() {
   })
 
   const loadData = useCallback(async () => {
+    // Wait for wallet to be connected
+    if (!publicKey) {
+      setLoading(false)
+      return
+    }
+
     try {
       setLoadError(null)
       const [data, marketData, price] = await Promise.all([
-        stellendContractAPI.getDashboardData(publicKey || ""),
+        stellendContractAPI.getDashboardData(publicKey),
         stellendContractAPI.getMarkets(),
         sorobanService.getPrice("XLM"),
       ])
@@ -95,9 +101,36 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="p-8">
-        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          Loading on-chain data...
+        <div className="flex items-center justify-center gap-2 text-muted-foreground min-h-[60vh] flex-col">
+          <Loader2 className="w-8 h-8 animate-spin" />
+          <p>Loading on-chain data...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show connect wallet message if not connected
+  if (!publicKey || !isConnected) {
+    return (
+      <div className="p-8">
+        <div className="flex flex-col items-center justify-center gap-6 text-center min-h-[60vh]">
+          <div className="rounded-full bg-primary/10 p-6">
+            <Shield className="w-12 h-12 text-primary" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold">Connect Your Wallet</h2>
+            <p className="text-muted-foreground max-w-md">
+              Connect your Freighter wallet to view your dashboard and start using the protocol
+            </p>
+          </div>
+          <Button 
+            onClick={() => window.location.href = '/'}
+            size="lg"
+            className="gap-2"
+          >
+            <Shield className="w-4 h-4" />
+            Go to Home
+          </Button>
         </div>
       </div>
     )

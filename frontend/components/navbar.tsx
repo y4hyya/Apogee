@@ -2,7 +2,7 @@
 
 import { useWallet } from "@/hooks/use-wallet"
 import { formatAddress } from "@/utils/format"
-import { Zap, LogOut, BookOpen, Loader2, Wallet, AlertCircle } from "lucide-react"
+import { Zap, LogOut, BookOpen, Wallet, Loader2, AlertCircle } from "lucide-react"
 
 interface NavbarProps {
   onLearnMore?: () => void
@@ -12,12 +12,12 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
   const { 
     publicKey, 
     isConnected, 
-    isFreighterInstalled,
     network,
-    connectWallet, 
+    connectWallet,
     disconnectWallet,
+    isLoading,
     error,
-    isLoading 
+    isFreighterInstalled,
   } = useWallet()
 
   const getNetworkBadge = () => {
@@ -96,7 +96,7 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
               </button>
             )}
             
-            {/* Connect Button */}
+            {/* Connect Wallet - Direct Connection */}
             <button
               onClick={connectWallet}
               disabled={isLoading}
@@ -110,7 +110,7 @@ export default function Navbar({ onLearnMore }: NavbarProps = {}) {
               ) : (
                 <>
                   <Wallet className="w-4 h-4" />
-                  {isFreighterInstalled ? "Connect Freighter" : "Install Freighter"}
+                  {isFreighterInstalled ? "Connect Wallet" : "Install Freighter"}
                 </>
               )}
             </button>

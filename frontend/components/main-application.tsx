@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useWallet } from "@/hooks/use-wallet"
 import { LandingPage } from "@/components/landing-page"
 import { InfoPage } from "@/components/info-page"
@@ -17,11 +17,23 @@ export function MainApplication() {
     "landing" | "info" | "dashboard" | "collateral" | "borrow" | "lend" | "learn"
   >("landing")
   const [mounted, setMounted] = useState(false)
+  const previousConnected = useRef(isConnected)
 
-  // Prevent hydration mismatch
+  // Prevent hydration mismatch and check initial connection state
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Auto-navigate to dashboard when wallet connects
+  useEffect(() => {
+    if (isConnected) {
+      // Always go to dashboard when connected (both on initial load and reconnection)
+      if (currentPage === "landing" || currentPage === "info" || !previousConnected.current) {
+        setCurrentPage("dashboard")
+      }
+    }
+    previousConnected.current = isConnected
+  }, [isConnected, currentPage])
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
