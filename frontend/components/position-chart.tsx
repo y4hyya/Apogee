@@ -16,18 +16,18 @@ export function PositionChart({ data }: PositionChartProps) {
   return (
     <Card className="glass-panel border-white/10">
       <CardHeader>
-        <CardTitle>Pozisyon Geçmişi</CardTitle>
-        <CardDescription>Son 30 günlük teminat ve borç değerleri</CardDescription>
+        <CardTitle>Position History</CardTitle>
+        <CardDescription>Last 30 days collateral and debt values</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer
           config={{
             collateral: {
-              label: "Teminat",
+              label: "Collateral",
               color: "hsl(var(--chart-1))",
             },
             debt: {
-              label: "Borç",
+              label: "Debt",
               color: "hsl(var(--chart-2))",
             },
           }}
@@ -55,9 +55,9 @@ export function PositionChart({ data }: PositionChartProps) {
                 dataKey="collateral"
                 stroke="hsl(var(--chart-1))"
                 fill="url(#colorCollateral)"
-                name="Teminat"
+                name="Collateral"
               />
-              <Area type="monotone" dataKey="debt" stroke="hsl(var(--chart-2))" fill="url(#colorDebt)" name="Borç" />
+              <Area type="monotone" dataKey="debt" stroke="hsl(var(--chart-2))" fill="url(#colorDebt)" name="Debt" />
             </AreaChart>
           </ResponsiveContainer>
         </ChartContainer>

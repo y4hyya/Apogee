@@ -40,40 +40,40 @@ export function TransactionHistory({ transactions }: TransactionHistoryProps) {
   const getTransactionLabel = (type: Transaction["type"]) => {
     switch (type) {
       case "deposit":
-        return "Yatırma"
+        return "Deposit"
       case "withdraw":
-        return "Çekme"
+        return "Withdraw"
       case "borrow":
-        return "Borçlanma"
+        return "Borrow"
       case "repay":
-        return "Ödeme"
+        return "Repay"
     }
   }
 
   return (
     <Card className="glass-panel border-white/10">
       <CardHeader>
-        <CardTitle>İşlem Geçmişi</CardTitle>
-        <CardDescription>Tüm platform işlemleriniz</CardDescription>
+        <CardTitle>Transaction History</CardTitle>
+        <CardDescription>All your platform transactions</CardDescription>
         <div className="flex gap-2 pt-4">
           <Button size="sm" variant={filter === "all" ? "default" : "outline"} onClick={() => setFilter("all")}>
-            Tümü
+            All
           </Button>
           <Button size="sm" variant={filter === "deposit" ? "default" : "outline"} onClick={() => setFilter("deposit")}>
-            Yatırma
+            Deposit
           </Button>
           <Button
             size="sm"
             variant={filter === "withdraw" ? "default" : "outline"}
             onClick={() => setFilter("withdraw")}
           >
-            Çekme
+            Withdraw
           </Button>
           <Button size="sm" variant={filter === "borrow" ? "default" : "outline"} onClick={() => setFilter("borrow")}>
-            Borçlanma
+            Borrow
           </Button>
           <Button size="sm" variant={filter === "repay" ? "default" : "outline"} onClick={() => setFilter("repay")}>
-            Ödeme
+            Repay
           </Button>
         </div>
       </CardHeader>
@@ -92,7 +92,7 @@ export function TransactionHistory({ transactions }: TransactionHistoryProps) {
                     <Badge variant="outline">{tx.asset}</Badge>
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {tx.timestamp.toLocaleDateString("tr-TR", {
+                    {tx.timestamp.toLocaleDateString("en-US", {
                       day: "numeric",
                       month: "short",
                       year: "numeric",
@@ -111,7 +111,7 @@ export function TransactionHistory({ transactions }: TransactionHistoryProps) {
                 </div>
                 <Button size="icon" variant="ghost" asChild>
                   <a
-                    href={`https://stellar.expert/explorer/public/tx/${tx.txHash}`}
+                    href={`https://stellar.expert/explorer/testnet/tx/${tx.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

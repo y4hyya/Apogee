@@ -55,28 +55,28 @@ export function SimulationTool({
   return (
     <Card className="glass-panel border-white/10">
       <CardHeader>
-        <CardTitle>Simülasyon Aracı</CardTitle>
-        <CardDescription>İşlemlerin Health Factor üzerindeki etkisini hesaplayın</CardDescription>
+        <CardTitle>Simulation Tool</CardTitle>
+        <CardDescription>Calculate the impact of transactions on your Health Factor</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>İşlem Tipi</Label>
+            <Label>Action Type</Label>
             <Select value={action} onValueChange={(v: any) => setAction(v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="deposit">Yatırma</SelectItem>
-                <SelectItem value="withdraw">Çekme</SelectItem>
-                <SelectItem value="borrow">Borçlanma</SelectItem>
-                <SelectItem value="repay">Ödeme</SelectItem>
+                <SelectItem value="deposit">Deposit</SelectItem>
+                <SelectItem value="withdraw">Withdraw</SelectItem>
+                <SelectItem value="borrow">Borrow</SelectItem>
+                <SelectItem value="repay">Repay</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label>Varlık</Label>
+            <Label>Asset</Label>
             <Select value={asset} onValueChange={setAsset}>
               <SelectTrigger>
                 <SelectValue />
@@ -84,27 +84,25 @@ export function SimulationTool({
               <SelectContent>
                 <SelectItem value="USDC">USDC</SelectItem>
                 <SelectItem value="XLM">XLM</SelectItem>
-                <SelectItem value="BTC">BTC</SelectItem>
-                <SelectItem value="ETH">ETH</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label>Miktar (USD)</Label>
+          <Label>Amount (USD)</Label>
           <Input type="number" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
 
         {amount && Number.parseFloat(amount) > 0 && (
           <div className="space-y-4 p-4 rounded-lg bg-white/5">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Mevcut Health Factor</span>
+              <span className="text-sm text-muted-foreground">Current Health Factor</span>
               <span className="font-semibold">{currentHealthFactor.toFixed(2)}</span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Yeni Health Factor</span>
+              <span className="text-sm text-muted-foreground">New Health Factor</span>
               <div className="flex items-center gap-2">
                 <span className={`font-semibold ${isRisky ? "text-red-500" : "text-green-500"}`}>
                   {newHealthFactor.toFixed(2)}
@@ -118,7 +116,7 @@ export function SimulationTool({
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Değişim</span>
+              <span className="text-sm text-muted-foreground">Change</span>
               <span className={healthFactorChange > 0 ? "text-green-500" : "text-red-500"}>
                 {healthFactorChange > 0 ? "+" : ""}
                 {healthFactorChange.toFixed(2)}
@@ -129,8 +127,8 @@ export function SimulationTool({
               <div className="flex gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-red-500">
-                  <p className="font-semibold">Uyarı: Düşük Health Factor</p>
-                  <p>Bu işlem pozisyonunuzu riskli hale getirebilir. Dikkatli olun!</p>
+                  <p className="font-semibold">Warning: Low Health Factor</p>
+                  <p>This action may put your position at risk. Be careful!</p>
                 </div>
               </div>
             )}

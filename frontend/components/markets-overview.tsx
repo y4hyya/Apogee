@@ -13,21 +13,21 @@ export function MarketsOverview({ markets }: MarketsOverviewProps) {
   return (
     <Card className="glass-panel border-white/10">
       <CardHeader>
-        <CardTitle>Piyasalar</CardTitle>
-        <CardDescription>Tüm varlıkların durumu ve oranları</CardDescription>
+        <CardTitle>Markets</CardTitle>
+        <CardDescription>Overview of all assets and their rates</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10">
-                <th className="text-left py-3 px-4">Varlık</th>
-                <th className="text-right py-3 px-4">Toplam Arz</th>
-                <th className="text-right py-3 px-4">Toplam Borç</th>
-                <th className="text-right py-3 px-4">Arz APR</th>
-                <th className="text-right py-3 px-4">Borç APY</th>
-                <th className="text-right py-3 px-4">Kullanım</th>
-                <th className="text-right py-3 px-4">Fiyat</th>
+                <th className="text-left py-3 px-4">Asset</th>
+                <th className="text-right py-3 px-4">Total Supply</th>
+                <th className="text-right py-3 px-4">Total Borrowed</th>
+                <th className="text-right py-3 px-4">Supply APR</th>
+                <th className="text-right py-3 px-4">Borrow APY</th>
+                <th className="text-right py-3 px-4">Utilization</th>
+                <th className="text-right py-3 px-4">Price</th>
               </tr>
             </thead>
             <tbody>

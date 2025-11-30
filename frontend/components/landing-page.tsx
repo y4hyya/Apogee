@@ -1,20 +1,78 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { TrendingUp, Shield, Zap, DollarSign, Lock, Users } from "lucide-react"
+import { TrendingUp, Shield, Zap, DollarSign, Lock, Users, Loader2 } from "lucide-react"
 import { useWallet } from "@/hooks/use-wallet"
+import { stellendContractAPI } from "@/services/soroban-service"
+
+interface PlatformMetrics {
+  tvl: number
+  totalSupplied: number
+  totalBorrowed: number
+  bestSupplyAPR: number
+  bestBorrowAPY: number
+  utilization: number
+}
 
 export function LandingPage() {
   const { connectWallet } = useWallet()
+  const [metrics, setMetrics] = useState<PlatformMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Mock platform metrics
-  const platformMetrics = {
-    tvl: 12450000,
-    totalSupplied: 8500000,
-    totalBorrowed: 3950000,
-    bestSupplyAPR: 12.5,
-    bestBorrowAPY: 8.2,
-    activeUsers: 1247,
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const markets = await stellendContractAPI.getMarkets()
+        
+        // Aggregate metrics from all markets
+        const totalSupplied = markets.reduce((acc, m) => acc + m.totalSupplied, 0)
+        const totalBorrowed = markets.reduce((acc, m) => acc + m.totalBorrowed, 0)
+        const tvl = totalSupplied - totalBorrowed
+        
+        // Find best rates
+        const bestSupplyAPR = Math.max(...markets.map(m => m.supplyAPR), 0)
+        const bestBorrowAPY = Math.max(...markets.map(m => m.borrowAPY), 0)
+        
+        // Calculate overall utilization
+        const utilization = totalSupplied > 0 ? (totalBorrowed / totalSupplied) * 100 : 0
+
+        setMetrics({
+          tvl,
+          totalSupplied,
+          totalBorrowed,
+          bestSupplyAPR,
+          bestBorrowAPY,
+          utilization,
+        })
+      } catch (error) {
+        console.error("Error loading platform metrics:", error)
+        // Set default values on error
+        setMetrics({
+          tvl: 0,
+          totalSupplied: 0,
+          totalBorrowed: 0,
+          bestSupplyAPR: 0,
+          bestBorrowAPY: 0,
+          utilization: 0,
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadMetrics()
+  }, [])
+
+  // Format large numbers
+  const formatValue = (value: number): string => {
+    if (value >= 1000000) {
+      return `$${(value / 1000000).toFixed(2)}M`
+    } else if (value >= 1000) {
+      return `$${(value / 1000).toFixed(2)}K`
+    } else {
+      return `$${value.toFixed(2)}`
+    }
   }
 
   return (
@@ -59,70 +117,77 @@ export function LandingPage() {
             <p className="text-muted-foreground">Live statistics from the protocol</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="glassmorphism border-2 border-primary/30 hover:border-primary/50 transition-all duration-300">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                    <Lock className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">Total Value Locked</p>
-                    <p className="text-2xl font-bold text-primary">${(platformMetrics.tvl / 1000000).toFixed(2)}M</p>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">Total value of all assets in the protocol</p>
-              </CardContent>
-            </Card>
-
-            <Card className="glassmorphism border-2 border-success/30 hover:border-success/50 transition-all duration-300">
-              <CardContent className="pt-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-success/20 to-success/10 flex items-center justify-center">
-                      <TrendingUp className="w-6 h-6 text-success" />
+          {loading ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span className="ml-2 text-muted-foreground">Loading live data...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="glassmorphism border-2 border-primary/30 hover:border-primary/50 transition-all duration-300">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+                      <Lock className="w-6 h-6 text-primary" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Supplied</p>
-                      <p className="text-2xl font-bold text-success">
-                        ${(platformMetrics.totalSupplied / 1000000).toFixed(2)}M
-                      </p>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Value Locked</p>
+                      <p className="text-2xl font-bold text-primary">{formatValue(metrics?.tvl || 0)}</p>
                     </div>
                   </div>
-                  <div className="border-t border-border/50 pt-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Best APR</span>
-                      <span className="text-lg font-bold text-success">{platformMetrics.bestSupplyAPR}%</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <p className="text-sm text-muted-foreground">Total value of all assets in the protocol</p>
+                </CardContent>
+              </Card>
 
-            <Card className="glassmorphism border-2 border-destructive/30 hover:border-destructive/50 transition-all duration-300">
-              <CardContent className="pt-6">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center">
-                      <DollarSign className="w-6 h-6 text-destructive" />
+              <Card className="glassmorphism border-2 border-success/30 hover:border-success/50 transition-all duration-300">
+                <CardContent className="pt-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-success/20 to-success/10 flex items-center justify-center">
+                        <TrendingUp className="w-6 h-6 text-success" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase">Total Supplied</p>
+                        <p className="text-2xl font-bold text-success">
+                          {formatValue(metrics?.totalSupplied || 0)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Total Borrowed</p>
-                      <p className="text-2xl font-bold text-destructive">
-                        ${(platformMetrics.totalBorrowed / 1000000).toFixed(2)}M
-                      </p>
+                    <div className="border-t border-border/50 pt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Best APR</span>
+                        <span className="text-lg font-bold text-success">{(metrics?.bestSupplyAPR || 0).toFixed(2)}%</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="border-t border-border/50 pt-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Best APY</span>
-                      <span className="text-lg font-bold text-destructive">{platformMetrics.bestBorrowAPY}%</span>
+                </CardContent>
+              </Card>
+
+              <Card className="glassmorphism border-2 border-destructive/30 hover:border-destructive/50 transition-all duration-300">
+                <CardContent className="pt-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center">
+                        <DollarSign className="w-6 h-6 text-destructive" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase">Total Borrowed</p>
+                        <p className="text-2xl font-bold text-destructive">
+                          {formatValue(metrics?.totalBorrowed || 0)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="border-t border-border/50 pt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Best APY</span>
+                        <span className="text-lg font-bold text-destructive">{(metrics?.bestBorrowAPY || 0).toFixed(2)}%</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       </section>
 
@@ -185,7 +250,7 @@ export function LandingPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-1">•</span>
-                    <span>Audited and battle-tested protocol</span>
+                    <span>Transparent and auditable on-chain logic</span>
                   </li>
                 </ul>
               </CardContent>
@@ -195,15 +260,15 @@ export function LandingPage() {
               <CardContent className="pt-6">
                 <div className="flex items-center gap-3 mb-4">
                   <Users className="w-8 h-8 text-accent" />
-                  <h3 className="text-2xl font-bold">Community</h3>
+                  <h3 className="text-2xl font-bold">Protocol Stats</h3>
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                    <span className="text-sm text-muted-foreground">Active Users</span>
-                    <span className="text-lg font-bold">{platformMetrics.activeUsers.toLocaleString()}</span>
+                    <span className="text-sm text-muted-foreground">Pool Utilization</span>
+                    <span className="text-lg font-bold">{(metrics?.utilization || 0).toFixed(1)}%</span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Join thousands of users who trust and actively use the platform
+                    Join the decentralized lending revolution on Stellar
                   </p>
                 </div>
               </CardContent>
