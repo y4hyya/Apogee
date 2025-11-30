@@ -260,23 +260,68 @@ Example Liquidation:
 
 ## 📈 Interest Rate Model
 
-<p align="center">
-  <img width="800" alt="Interest Rate Model" src="https://github.com/user-attachments/assets/01cba5b3-a5ef-412a-b75b-a33a0244fd65" />
-</p>
+Apogee uses a **multi-segment kinked interest rate model** that aggressively incentivizes optimal pool utilization. The rate increases exponentially as utilization approaches 100%.
 
-The protocol uses a **kinked interest rate model** that incentivizes optimal pool utilization:
+### Variables
+
+| Symbol | Description |
+|--------|-------------|
+| $U$ | Current utilization rate (0 to 1) |
+| $U^*$ | Optimal utilization (default: 80%) |
+| $R_{\text{opt}}$ | Rate at optimal utilization |
+| $R_{\text{max}}$ | Maximum rate |
+| $R_{\text{min}}$ | Minimum rate floor |
+| $\Delta R$ | Rate spread = $R_{\text{max}} - R_{\text{opt}}$ |
+
+### Formula
+
+The final rate is:
+
+$$
+R(U) = \max\{R_{\text{min}}, R_{\text{raw}}(U)\}
+$$
+
+Where $R_{\text{raw}}(U)$ is calculated based on utilization segments:
+
+$$
+R_{\text{raw}}(U) = \begin{cases}
+R_{\text{opt}} \cdot \dfrac{U}{U^*} & U \leq U^* \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50}{1000} \cdot \dfrac{U - U^*}{0.85 - U^*} & U^* < U \leq 0.85 \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50 + 100 \cdot \frac{U - 0.85}{0.05}}{1000} & 0.85 < U \leq 0.90 \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50 + 100 + 150 \cdot \frac{U - 0.90}{0.05}}{1000} & 0.90 < U \leq 0.95 \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50 + 100 + 150 + 200 \cdot \frac{U - 0.95}{0.04}}{1000} & 0.95 < U \leq 0.99 \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50 + 100 + 150 + 200 + 250 \cdot \frac{U - 0.99}{0.005}}{1000} & 0.99 < U \leq 0.995 \\[12pt]
+R_{\text{opt}} + \Delta R \cdot \dfrac{50 + 100 + 150 + 200 + 250 + 250 \cdot \frac{U - 0.995}{0.005}}{1000} & 0.995 < U \leq 1
+\end{cases}
+$$
+
+### Rate Segments Explained
+
+| Utilization | Segment | Behavior |
+|-------------|---------|----------|
+| **0% - 80%** | Linear | Rate scales linearly to $R_{\text{opt}}$ |
+| **80% - 85%** | Kink 1 | Moderate rate increase begins |
+| **85% - 90%** | Kink 2 | Steeper increase (+100 basis) |
+| **90% - 95%** | Kink 3 | Aggressive increase (+150 basis) |
+| **95% - 99%** | Kink 4 | Very steep (+200 basis) |
+| **99% - 99.5%** | Kink 5 | Extreme rates (+250 basis) |
+| **99.5% - 100%** | Kink 6 | Maximum pressure (+250 basis) |
+
+### Why Multi-Segment?
+
+This model creates **exponentially increasing pressure** as the pool approaches full utilization:
+
+- 📉 **Borrowers** face rapidly rising costs → incentivized to repay
+- 📈 **Lenders** see attractive yields → incentivized to deposit
+- ⚖️ **Pool** naturally rebalances toward optimal 80% utilization
 
 ```
-If utilization ≤ 80%:
-  Rate = (utilization / 80%) × 4%
-
-If utilization > 80%:
-  Rate = 4% + ((utilization - 80%) / 20%) × 75%
+Example at 95% utilization:
+- Base rate: 4% (at optimal)
+- Additional: (50 + 100 + 150) / 1000 × ΔR = 30% of spread
+- If ΔR = 75%, additional rate = 22.5%
+- Total borrow rate: ~26.5% APR
 ```
-
-This creates a sharp rate increase above 80% utilization, incentivizing:
-- **Borrowers** to repay when utilization is high
-- **Lenders** to deposit when rates are attractive
 
 ---
 
