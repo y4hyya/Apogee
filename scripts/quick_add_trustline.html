@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><title>Add Trustline</title></head>
+<body style="font-family: monospace; padding: 20px; background: #000; color: #0f0;">
+<h1>Add Platform USDC Trustline</h1>
+<p>Click the button below. Freighter will pop up to approve.</p>
+<button onclick="addTrustline()" style="padding: 15px; font-size: 16px; cursor: pointer;">Add Trustline</button>
+<div id="result" style="margin-top: 20px; white-space: pre-wrap;"></div>
+
+<script>
+async function addTrustline() {
+    const result = document.getElementById('result');
+    result.textContent = 'Loading...';
+    
+    try {
+        if (!window.freighterApi) {
+            result.textContent = '❌ Freighter not detected!';
+            return;
+        }
+        
+        const xdr = "AAAAAgAAAABuqZQ7ZOBprPQ6tACMTvaNc8T4EZdskQxY1El1UNTC6gAAAGQAHDDSAAAACwAAAAEAAAAAAAAAAAAAAABpK57AAAAAAAAAAAEAAAAAAAAABgAAAAFVU0RDAAAAAIWR2o2gfueLwM3ABkOWxTVAMrx/0fwr1YcE9JsmZKYOACOG8m/BAAAAAAAAAAAAAA==";
+        
+        result.textContent = 'Signing transaction... Please approve in Freighter.';
+        const signed = await window.freighterApi.signTransaction(xdr);
+        
+        result.textContent = 'Submitting transaction...';
+        const response = await fetch("https://horizon-testnet.stellar.org/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: "tx=" + encodeURIComponent(signed)
+        });
+        
+        const data = await response.json();
+        if (data.hash) {
+            result.textContent = '✅ SUCCESS!\n\nTransaction Hash: ' + data.hash + '\n\nView: https://stellar.expert/explorer/testnet/tx/' + data.hash + '\n\nYou can now receive platform USDC!';
+        } else {
+            result.textContent = '❌ Error: ' + JSON.stringify(data, null, 2);
+        }
+    } catch (error) {
+        result.textContent = '❌ Error: ' + error.message;
+    }
+}
+</script>
+</body>
+</html>

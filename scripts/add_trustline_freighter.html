@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add USDC Trustline - Stellend</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #fff;
+        }
+        .container {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid #333;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .status.success {
+            background: #1e4d1e;
+            border: 1px solid #28a745;
+            display: block;
+        }
+        .status.error {
+            background: #4d1e1e;
+            border: 1px solid #dc3545;
+            display: block;
+        }
+        .status.info {
+            background: #1e3d4d;
+            border: 1px solid #17a2b8;
+            display: block;
+        }
+        code {
+            background: #2a2a2a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .info-box {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Add Platform USDC Trustline</h1>
+        
+        <div class="info-box">
+            <p><strong>Network:</strong> Testnet</p>
+            <p><strong>Asset:</strong> USDC</p>
+            <p><strong>Issuer:</strong> <code>GCCZDWUNUB7OPC6AZXAAMQ4WYU2UAMV4P7I7YK6VQ4CPJGZGMSTA555B</code></p>
+            <p><strong>Your Account:</strong> <code id="userAccount">Loading...</code></p>
+        </div>
+
+        <button id="checkFreighter">1. Check Freighter Connection</button>
+        <button id="addTrustline">2. Add Trustline</button>
+        
+        <div id="status" class="status"></div>
+
+        <div class="info-box">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Make sure Freighter wallet is installed and unlocked</li>
+                <li>Click "Check Freighter Connection" to verify</li>
+                <li>Click "Add Trustline" - Freighter will pop up for approval</li>
+                <li>After success, you can receive platform USDC!</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const USDC_ISSUER = "GCCZDWUNUB7OPC6AZXAAMQ4WYU2UAMV4P7I7YK6VQ4CPJGZGMSTA555B";
+        const NETWORK_PASSPHrase = "Test SDF Network ; September 2015";
+        const HORIZON_URL = "https://horizon-testnet.stellar.org";
+
+        function showStatus(message, type = "info") {
+            const status = document.getElementById("status");
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        async function checkFreighter() {
+            try {
+                showStatus("Checking Freighter connection...", "info");
+                
+                if (typeof window.freighterApi === 'undefined') {
+                    showStatus("❌ Freighter not detected. Please install Freighter wallet extension.", "error");
+                    return false;
+                }
+
+                const isConnected = await window.freighterApi.isConnected();
+                if (!isConnected) {
+                    showStatus("❌ Freighter is not connected. Please unlock Freighter.", "error");
+                    return false;
+                }
+
+                const publicKey = await window.freighterApi.getPublicKey();
+                document.getElementById("userAccount").textContent = publicKey;
+
+                const network = await window.freighterApi.getNetwork();
+                if (network !== "TESTNET") {
+                    showStatus(`⚠️ Warning: Freighter is on ${network} network. Please switch to TESTNET.`, "error");
+                    return false;
+                }
+
+                showStatus(`✅ Freighter connected! Account: ${publicKey}`, "success");
+                return true;
+            } catch (error) {
+                showStatus(`❌ Error: ${error.message}`, "error");
+                return false;
+            }
+        }
+
+        async function addTrustline() {
+            try {
+                showStatus("Preparing trustline transaction...", "info");
+
+                // Check Freighter first
+                if (!await checkFreighter()) {
+                    return;
+                }
+
+                const publicKey = await window.freighterApi.getPublicKey();
+                
+                // Fetch account info
+                showStatus("Fetching account information...", "info");
+                const response = await fetch(`${HORIZON_URL}/accounts/${publicKey}`);
+                if (!response.ok) {
+                    throw new Error("Account not found");
+                }
+                const account = await response.json();
+
+                // Build transaction
+                const StellarSdk = await import("https://cdn.jsdelivr.net/npm/stellar-sdk@latest/dist/stellar-sdk.min.mjs");
+                
+                const usdcAsset = new StellarSdk.Asset("USDC", USDC_ISSUER);
+                
+                const transaction = new StellarSdk.TransactionBuilder(
+                    new StellarSdk.Account(account.account_id, account.sequence),
+                    {
+                        fee: StellarSdk.BASE_FEE,
+                        networkPassphrase: NETWORK_PASSPHrase,
+                    }
+                )
+                    .addOperation(
+                        StellarSdk.Operation.changeTrust({
+                            asset: usdcAsset,
+                            limit: "1000000000",
+                        })
+                    )
+                    .setTimeout(300) // 5 minutes
+                    .build();
+
+                const xdr = transaction.toXDR();
+                
+                // Sign with Freighter
+                showStatus("Please approve the transaction in Freighter popup...", "info");
+                const signedXdr = await window.freighterApi.signTransaction(xdr, {
+                    network: "TESTNET",
+                    accountToSign: publicKey,
+                });
+
+                // Submit transaction
+                showStatus("Submitting transaction...", "info");
+                const tx = StellarSdk.TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHrase);
+                
+                const horizonServer = new StellarSdk.Horizon.Server(HORIZON_URL);
+                const result = await horizonServer.submitTransaction(tx);
+
+                showStatus(
+                    `✅ Trustline added successfully!\n\nTransaction: ${result.hash}\n\nYou can now receive platform USDC!`,
+                    "success"
+                );
+
+            } catch (error) {
+                console.error("Error:", error);
+                if (error.message?.includes("op_already_exists")) {
+                    showStatus("✅ Trustline already exists! You're all set.", "success");
+                } else if (error.message?.includes("User rejected")) {
+                    showStatus("❌ Transaction was rejected. Please try again.", "error");
+                } else {
+                    showStatus(`❌ Error: ${error.message}`, "error");
+                }
+            }
+        }
+
+        document.getElementById("checkFreighter").addEventListener("click", checkFreighter);
+        document.getElementById("addTrustline").addEventListener("click", addTrustline);
+
+        // Auto-check on load
+        window.addEventListener("load", () => {
+            setTimeout(checkFreighter, 500);
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Platform USDC Trustline</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success { background: #1e4d1e; border: 1px solid #28a745; }
+        .error { background: #4d1e1e; border: 1px solid #dc3545; }
+        .info { background: #1e3d4d; border: 1px solid #17a2b8; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Add Platform USDC Trustline</h1>
+    <p>Make sure Freighter wallet extension is installed and unlocked.</p>
+    
+    <button id="checkBtn" onclick="checkFreighter()">1. Check Freighter</button>
+    <button id="addBtn" onclick="addTrustline()" disabled>2. Add Trustline</button>
+    
+    <div id="result"></div>
+
+    <script>
+        let userPublicKey = null;
+
+        function showResult(msg, type = 'info') {
+            const el = document.getElementById('result');
+            el.textContent = msg;
+            el.className = type;
+            el.style.display = 'block';
+        }
+
+        async function checkFreighter() {
+            showResult('Checking Freighter...', 'info');
+            
+            // Wait a bit for Freighter to load
+            await new Promise(r => setTimeout(r, 500));
+            
+            // Try multiple possible API paths
+            let freighter = null;
+            if (typeof window.freighterApi !== 'undefined') {
+                freighter = window.freighterApi;
+            } else if (typeof window.freighter !== 'undefined') {
+                freighter = window.freighter;
+            } else if (typeof window.stellarFreighter !== 'undefined') {
+                freighter = window.stellarFreighter;
+            } else {
+                // Try to access via message passing
+                try {
+                    const response = await window.postMessage({
+                        type: 'FREIGHTER_GET_PUBLIC_KEY'
+                    }, '*');
+                } catch(e) {}
+            }
+            
+            if (!freighter) {
+                showResult('❌ Freighter wallet not detected!\n\nPlease:\n1. Install Freighter extension\n2. Make sure it\'s unlocked\n3. Refresh this page', 'error');
+                return;
+            }
+
+            try {
+                // Try different method names
+                let pk;
+                if (freighter.getPublicKey) {
+                    pk = await freighter.getPublicKey();
+                } else if (freighter.getAddress) {
+                    pk = await freighter.getAddress();
+                } else {
+                    throw new Error('Cannot access Freighter API');
+                }
+                
+                userPublicKey = pk;
+                showResult(`✅ Freighter connected!\nAccount: ${pk}\n\nYou can now click "Add Trustline"`, 'success');
+                document.getElementById('addBtn').disabled = false;
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}\n\nMake sure Freighter is unlocked!`, 'error');
+            }
+        }
+
+        async function addTrustline() {
+            if (!userPublicKey) {
+                showResult('❌ Please check Freighter connection first!', 'error');
+                return;
+            }
+
+            showResult('Generating fresh transaction...', 'info');
+
+            try {
+                // Fetch account to get sequence number
+                const accountResp = await fetch(`https://horizon-testnet.stellar.org/accounts/${userPublicKey}`);
+                if (!accountResp.ok) throw new Error('Account not found');
+                const account = await accountResp.json();
+
+                // Build transaction using Stellar SDK from CDN
+                const StellarSdk = StellarSdk || await import('https://cdn.skypack.dev/@stellar/stellar-sdk');
+                
+                const usdcAsset = new StellarSdk.Asset("USDC", "GCCZDWUNUB7OPC6AZXAAMQ4WYU2UAMV4P7I7YK6VQ4CPJGZGMSTA555B");
+                
+                const transaction = new StellarSdk.TransactionBuilder(
+                    new StellarSdk.Account(account.account_id, account.sequence),
+                    {
+                        fee: StellarSdk.BASE_FEE,
+                        networkPassphrase: "Test SDF Network ; September 2015",
+                    }
+                )
+                    .addOperation(
+                        StellarSdk.Operation.changeTrust({
+                            asset: usdcAsset,
+                            limit: "1000000000",
+                        })
+                    )
+                    .setTimeout(300)
+                    .build();
+
+                const xdr = transaction.toXDR();
+                
+                showResult('Please approve the transaction in Freighter popup...', 'info');
+                
+                // Sign with Freighter
+                let freighter = window.freighterApi || window.freighter || window.stellarFreighter;
+                const signedXdr = await freighter.signTransaction(xdr);
+                
+                showResult('Submitting transaction...', 'info');
+                
+                // Submit
+                const submitResp = await fetch("https://horizon-testnet.stellar.org/transactions", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: "tx=" + encodeURIComponent(signedXdr)
+                });
+                
+                const data = await submitResp.json();
+                if (data.hash) {
+                    showResult(`✅ SUCCESS!\n\nTransaction: ${data.hash}\n\nView: https://stellar.expert/explorer/testnet/tx/${data.hash}\n\nYou can now receive platform USDC!`, 'success');
+                } else {
+                    showResult('❌ Error: ' + JSON.stringify(data, null, 2), 'error');
+                }
+            } catch (error) {
+                showResult('❌ Error: ' + error.message + '\n\n' + error.stack, 'error');
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            setTimeout(checkFreighter, 1000);
+        });
+    </script>
+</body>
+</html>
+

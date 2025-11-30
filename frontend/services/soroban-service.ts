@@ -141,17 +141,68 @@ class SorobanContractService {
     }
   }
 
+  // Query classic asset balance from Horizon
+  async getClassicBalance(userAddress: string, assetCode: string, assetIssuer?: string): Promise<number> {
+    if (!userAddress) return 0
+    
+    try {
+      const horizonUrl = NETWORK_CONFIG.horizonUrl || "https://horizon-testnet.stellar.org"
+      const response = await fetch(`${horizonUrl}/accounts/${userAddress}`)
+      
+      if (!response.ok) {
+        console.log(`Account ${userAddress} not found on Horizon`)
+        return 0
+      }
+      
+      const account = await response.json()
+      
+      // For native XLM
+      if (assetCode === "XLM" && !assetIssuer) {
+        const nativeBalance = account.balances?.find((b: any) => b.asset_type === "native")
+        return nativeBalance ? parseFloat(nativeBalance.balance) : 0
+      }
+      
+      // For other assets (like USDC)
+      const assetBalance = account.balances?.find((b: any) => 
+        b.asset_code === assetCode && 
+        (!assetIssuer || b.asset_issuer === assetIssuer)
+      )
+      
+      return assetBalance ? parseFloat(assetBalance.balance) : 0
+    } catch (error) {
+      console.error(`Error fetching classic balance for ${assetCode}:`, error)
+      return 0
+    }
+  }
+
   // Get wallet balances for XLM and USDC tokens
+  // Tries SAC first, then falls back to Horizon classic balances
   async getWalletBalances(userAddress: string): Promise<WalletBalances> {
     if (!userAddress) {
       return { sXLM: 0, sUSDC: 0 }
     }
 
     try {
-      const [xlmBalance, usdcBalance] = await Promise.all([
-        CONTRACTS.XLM_TOKEN ? this.getTokenBalance(CONTRACTS.XLM_TOKEN, userAddress) : Promise.resolve(0),
-        CONTRACTS.USDC_TOKEN ? this.getTokenBalance(CONTRACTS.USDC_TOKEN, userAddress) : Promise.resolve(0),
-      ])
+      // Try SAC token balances first
+      let xlmBalance = 0
+      let usdcBalance = 0
+      
+      // Query XLM - try SAC first, then classic
+      if (CONTRACTS.XLM_TOKEN) {
+        xlmBalance = await this.getTokenBalance(CONTRACTS.XLM_TOKEN, userAddress)
+      }
+      if (xlmBalance === 0) {
+        xlmBalance = await this.getClassicBalance(userAddress, "XLM")
+      }
+      
+      // Query USDC - try SAC first, then classic
+      if (CONTRACTS.USDC_TOKEN) {
+        usdcBalance = await this.getTokenBalance(CONTRACTS.USDC_TOKEN, userAddress)
+      }
+      if (usdcBalance === 0) {
+        // Try to find any USDC asset the user has
+        usdcBalance = await this.getClassicBalance(userAddress, "USDC")
+      }
       
       console.log(`Wallet balances for ${userAddress}: XLM=${xlmBalance}, USDC=${usdcBalance}`)
       

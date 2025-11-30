@@ -10,6 +10,8 @@
     "setup-tokens": "tsx setup_tokens.ts",
     "seed-pool": "tsx seed_pool.ts",
     "fund-user": "tsx fund_user.ts",
+    "add-trustline": "tsx add_trustline.ts",
+    "generate-trustline-xdr": "tsx generate_trustline_xdr.ts",
     "update-price": "tsx update_price.ts",
     "update-price:crash": "tsx update_price.ts --crash",
     "update-price:mock": "tsx update_price.ts --mock",
