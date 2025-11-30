@@ -138,7 +138,7 @@ mod oracle_contract {
 }
 
 // Flag to enable/disable oracle calls (for testing without deployed oracle)
-const USE_ORACLE: bool = true; // Oracle is deployed and active
+const USE_ORACLE: bool = false; // Set to true when oracle is deployed
 
 #[contractimpl]
 impl LendingPool {
