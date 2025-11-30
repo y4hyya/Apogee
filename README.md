@@ -387,6 +387,10 @@ Health Factor = (Collateral Value × Liquidation Threshold) / Borrowed Value
 
 ## Interest Rate Model
 
+
+<img width="1980" height="1180" alt="image" src="https://github.com/user-attachments/assets/2a94b6ed-8b92-4039-85f4-80f194b286b6" />
+
+
 The protocol uses a kinked interest rate model:
 
 ```
